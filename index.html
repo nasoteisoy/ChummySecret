@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Chummy Games — Secret Hitler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0e12;
+  --surface: #1a1a24;
+  --surface2: #23233a;
+  --border: #2e2e48;
+  --text: #e8e6f0;
+  --text-dim: #8886a0;
+  --accent: #c9a84c;
+  --accent-glow: #c9a84c44;
+  --liberal: #3498db;
+  --liberal-bg: #3498db22;
+  --fascist: #e74c3c;
+  --fascist-bg: #e74c3c22;
+  --hitler: #8b0000;
+  --green: #2ecc71;
+  --red: #e74c3c;
+  --radius: 12px;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Noise overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+.screen { width: 100%; display: none; flex-direction: column; gap: 16px; animation: fadeIn .3s ease; }
+.screen.active { display: flex; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%,100%{ box-shadow: 0 0 0 0 var(--accent-glow); } 50%{ box-shadow: 0 0 20px 4px var(--accent-glow); } }
+
+/* Typography */
+h1 { font-family: var(--font-display); font-size: 2.4rem; letter-spacing: 3px; color: var(--accent); text-align: center; }
+h2 { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 2px; color: var(--text); text-align: center; }
+h3 { font-family: var(--font-display); font-size: 1.2rem; letter-spacing: 1px; color: var(--text-dim); }
+.subtitle { text-align: center; color: var(--text-dim); font-size: .85rem; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all .15s;
+}
+.card.clickable { cursor: pointer; }
+.card.clickable:hover { border-color: var(--accent); background: var(--surface2); }
+.card.clickable:active { transform: scale(.98); }
+
+/* Inputs */
+input[type="text"] {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color .15s;
+}
+input[type="text"]:focus { border-color: var(--accent); }
+input[type="text"]::placeholder { color: var(--text-dim); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem; font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  -webkit-user-select: none; user-select: none;
+}
+.btn:hover { border-color: var(--accent); background: var(--surface2); }
+.btn:active { transform: scale(.96); }
+.btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-family: var(--font-display); font-size: 1.2rem; letter-spacing: 2px; }
+.btn.primary:hover { background: #dab655; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: var(--fascist-bg); }
+.btn.liberal { border-color: var(--liberal); color: var(--liberal); }
+.btn.liberal:hover { background: var(--liberal-bg); }
+.btn.fascist { border-color: var(--fascist); color: var(--fascist); }
+.btn.fascist:hover { background: var(--fascist-bg); }
+.btn.small { padding: 8px 14px; font-size: .85rem; }
+.btn.full { width: 100%; }
+.btn:disabled { opacity: .4; pointer-events: none; }
+.btn.selected { border-color: var(--accent); background: var(--accent); color: #000; animation: pulse 2s infinite; }
+
+/* Tags */
+.tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.tag.president { background: var(--liberal-bg); color: var(--liberal); border: 1px solid var(--liberal); }
+.tag.chancellor { background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent); }
+.tag.dead { background: #33333366; color: #666; border: 1px solid #444; text-decoration: line-through; }
+.tag.vip { background: #9b59b622; color: #9b59b6; border: 1px solid #9b59b6; }
+.tag.fascist-tag { background: var(--fascist-bg); color: var(--fascist); border: 1px solid var(--fascist); }
+.tag.liberal-tag { background: var(--liberal-bg); color: var(--liberal); border: 1px solid var(--liberal); }
+.tag.hitler-tag { background: #8b000033; color: #ff4444; border: 1px solid #8b0000; }
+.tag.voted { background: #2ecc7122; color: var(--green); border: 1px solid var(--green); }
+
+/* Player list */
+.player-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid transparent;
+}
+.player-row.me { border-color: var(--accent); }
+.player-row .name { flex: 1; font-weight: 600; }
+.player-row .tags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Board */
+.board {
+  display: flex; gap: 6px; align-items: center; justify-content: center;
+  padding: 12px;
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+.board.fascist-board { background: linear-gradient(135deg, #2a1010, #1a0808); border: 1px solid #4a1a1a; }
+.board.liberal-board { background: linear-gradient(135deg, #101a2a, #08101a); border: 1px solid #1a2a4a; }
+.policy-slot {
+  width: 44px; height: 60px;
+  border-radius: 6px;
+  border: 2px dashed #444;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+}
+.policy-slot.filled-f { background: var(--fascist-bg); border-color: var(--fascist); }
+.policy-slot.filled-l { background: var(--liberal-bg); border-color: var(--liberal); }
+
+/* Policy cards (interactive) */
+.policy-card {
+  width: 70px; height: 100px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  font-family: var(--font-display);
+  font-size: .9rem; letter-spacing: 2px;
+  cursor: pointer;
+  transition: all .15s;
+  border: 2px solid transparent;
+  -webkit-user-select: none; user-select: none;
+}
+.policy-card.f-card { background: linear-gradient(145deg, #4a1515, #2a0808); color: var(--fascist); }
+.policy-card.l-card { background: linear-gradient(145deg, #152a4a, #08142a); color: var(--liberal); }
+.policy-card:hover { transform: translateY(-4px); }
+.policy-card.selected { border-color: var(--accent); transform: translateY(-8px); box-shadow: 0 8px 20px var(--accent-glow); }
+.policy-cards-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+/* Vote cards */
+.vote-card {
+  width: 90px; height: 60px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1.4rem; letter-spacing: 2px;
+  cursor: pointer;
+  transition: all .15s;
+  border: 2px solid transparent;
+  -webkit-user-select: none; user-select: none;
+}
+.vote-card.ja { background: linear-gradient(145deg, #1a3a1a, #0a2a0a); color: var(--green); }
+.vote-card.nein { background: linear-gradient(145deg, #3a1a1a, #2a0a0a); color: var(--red); }
+.vote-card:hover { transform: scale(1.05); }
+.vote-card.selected { border-color: var(--accent); box-shadow: 0 4px 16px var(--accent-glow); }
+.vote-row { display: flex; gap: 16px; justify-content: center; }
+
+/* Identity reveal */
+.identity-badge {
+  padding: 24px;
+  border-radius: var(--radius);
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all .3s;
+  -webkit-user-select: none; user-select: none;
+}
+.identity-badge.hidden-id { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); }
+.identity-badge.liberal-id { background: linear-gradient(135deg, #152a4a, #08142a); border: 1px solid var(--liberal); color: var(--liberal); }
+.identity-badge.fascist-id { background: linear-gradient(135deg, #4a1515, #2a0808); border: 1px solid var(--fascist); color: var(--fascist); }
+.identity-badge.hitler-id { background: linear-gradient(135deg, #4a0000, #1a0000); border: 1px solid #ff0000; color: #ff4444; }
+
+/* Info banner */
+.info-banner {
+  text-align: center;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+.info-banner.waiting { border-color: var(--accent); color: var(--accent); }
+.info-banner.action { border-color: var(--liberal); color: var(--liberal); background: var(--liberal-bg); }
+.info-banner.danger { border-color: var(--fascist); color: var(--fascist); background: var(--fascist-bg); }
+.info-banner.win-liberal { border-color: var(--liberal); color: var(--liberal); background: var(--liberal-bg); font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 3px; }
+.info-banner.win-fascist { border-color: var(--fascist); color: var(--fascist); background: var(--fascist-bg); font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 3px; }
+
+/* Score row */
+.score-row {
+  display: flex; gap: 12px; justify-content: center;
+}
+.score-box {
+  flex: 1; max-width: 160px;
+  text-align: center;
+  padding: 10px;
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+}
+.score-box.lib { background: var(--liberal-bg); border: 1px solid var(--liberal); color: var(--liberal); }
+.score-box.fas { background: var(--fascist-bg); border: 1px solid var(--fascist); color: var(--fascist); }
+.score-box .num { font-size: 2rem; }
+.score-box .label { font-size: .7rem; letter-spacing: 2px; color: var(--text-dim); }
+
+/* Retry tracker */
+.retry-dots { display: flex; gap: 6px; justify-content: center; }
+.retry-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text-dim); }
+.retry-dot.active { background: var(--accent); border-color: var(--accent); }
+
+/* Room list */
+.room-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all .15s;
+}
+.room-item:hover { border-color: var(--accent); background: var(--surface2); }
+.room-item .room-name { flex: 1; font-weight: 600; }
+.room-item .room-meta { color: var(--text-dim); font-size: .8rem; }
+.room-item .room-icon { font-size: 1.4rem; }
+
+/* Divider */
+.divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+/* Admin table */
+.admin-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.admin-table th, .admin-table td { padding: 8px 10px; border: 1px solid var(--border); text-align: left; }
+.admin-table th { background: var(--surface2); color: var(--accent); font-family: var(--font-display); letter-spacing: 1px; }
+.admin-table td { background: var(--surface); }
+.admin-table .mono { font-family: var(--font-mono); font-size: .75rem; }
+
+/* Flex helpers */
+.flex-row { display: flex; gap: 8px; align-items: center; }
+.flex-col { display: flex; flex-direction: column; gap: 8px; }
+.flex-center { justify-content: center; }
+.flex-between { justify-content: space-between; }
+.flex-wrap { flex-wrap: wrap; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.text-center { text-align: center; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.text-dim { color: var(--text-dim); }
+.text-sm { font-size: .85rem; }
+
+/* Logo */
+.logo-area {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 24px 0 8px;
+}
+.logo-emoji { font-size: 3rem; }
+.logo-sub { font-family: var(--font-mono); font-size: .65rem; color: var(--text-dim); letter-spacing: 2px; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface2); border: 1px solid var(--accent);
+  color: var(--text); padding: 12px 24px; border-radius: 30px;
+  font-size: .85rem; z-index: 10000;
+  animation: toastIn .3s ease, toastOut .3s ease 2.2s forwards;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(20px); } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(-50%) translateY(20px); } }
+
+/* Scrollable */
+.scroll-area { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Screens injected by JS -->
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// FIREBASE INIT
+// ═══════════════════════════════════════════════════════════════════
+firebase.initializeApp({
+  apiKey: "AIzaSyDVbt_8GuRuHJRPAN7jFXbs_lJUfUHNxHE",
+  authDomain: "chummy-games.firebaseapp.com",
+  databaseURL: "https://chummy-games-default-rtdb.firebaseio.com",
+  projectId: "chummy-games",
+  storageBucket: "chummy-games.firebasestorage.app",
+  messagingSenderId: "869241598273",
+  appId: "1:869241598273:web:d97492b7308f785c37f1c0"
+});
+const db = firebase.database();
+
+// ═══════════════════════════════════════════════════════════════════
+// PCID
+// ═══════════════════════════════════════════════════════════════════
+function getOrCreatePCID() {
+  const k = 'ChummyGames-PC-ID';
+  let id = localStorage.getItem(k);
+  if (!id || id.length !== 12) {
+    id = Array.from({ length: 12 }, () =>
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)]
+    ).join('');
+    localStorage.setItem(k, id);
+  }
+  return id;
+}
+const myPCID = getOrCreatePCID();
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+let myName = '';
+let currentRoomId = null;
+let currentScreen = '';
+let roomListener = null; // firebase listener ref
+let roomsListener = null;
+
+const app = document.getElementById('app');
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
+  return e;
+}
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function toast(msg) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = el('div', { class: 'toast' }, msg);
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+function buzz() { if (navigator.vibrate) navigator.vibrate(80); }
+function genRoomCode() {
+  return Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDERING HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function clearApp() { app.innerHTML = ''; }
+
+function renderLogoHeader() {
+  return el('div', { class: 'logo-area' },
+    el('div', { class: 'logo-emoji' }, '🎭'),
+    el('h1', {}, 'SECRET HITLER'),
+    el('div', { class: 'logo-sub' }, 'CHUMMY GAMES')
+  );
+}
+
+function renderPlayerRow(p, isSelf, showVote) {
+  const tags = [];
+  if (p.vip) tags.push(el('span', { class: 'tag vip' }, 'VIP'));
+  if (p.president) tags.push(el('span', { class: 'tag president' }, '🎩 Pres'));
+  if (p.chancellor) tags.push(el('span', { class: 'tag chancellor' }, '👔 Chan'));
+  if (p.inGameStatus === 'Dead') tags.push(el('span', { class: 'tag dead' }, '💀 Dead'));
+  if (showVote && p.vote && p.vote !== 'null') {
+    const vCls = p.vote === 'ja' ? 'liberal-tag' : 'fascist-tag';
+    tags.push(el('span', { class: `tag ${vCls}` }, p.vote.toUpperCase()));
+  } else if (p.vote && p.vote !== 'null' && !showVote) {
+    tags.push(el('span', { class: 'tag voted' }, '✓'));
+  }
+  const row = el('div', { class: 'player-row' + (isSelf ? ' me' : '') },
+    el('span', { class: 'name' }, p.name + (isSelf ? ' (you)' : '')),
+    el('span', { class: 'tags' }, ...tags)
+  );
+  if (p.inGameStatus === 'Dead') row.style.opacity = '0.5';
+  return row;
+}
+
+function renderScoreBoard(room) {
+  const fs = room.fascistScore || 0;
+  const ls = room.liberalScore || 0;
+  const retry = room.voteRetryCount || 0;
+  const pileCount = (room.drawPolicyPile || []).length;
+  return el('div', { class: 'flex-col gap-12' },
+    el('div', { class: 'score-row' },
+      el('div', { class: 'score-box lib' },
+        el('div', { class: 'num' }, `${ls}/5`),
+        el('div', { class: 'label' }, 'LIBERAL')
+      ),
+      el('div', { class: 'score-box fas' },
+        el('div', { class: 'num' }, `${fs}/6`),
+        el('div', { class: 'label' }, 'FASCIST')
+      )
+    ),
+    el('div', { class: 'flex-row flex-center gap-16' },
+      el('div', { class: 'flex-col', style: { alignItems: 'center' } },
+        el('div', { class: 'text-dim text-sm' }, 'Election Tracker'),
+        el('div', { class: 'retry-dots' },
+          ...Array.from({ length: 3 }, (_, i) => el('div', { class: 'retry-dot' + (i < retry ? ' active' : '') }))
+        )
+      ),
+      el('div', { class: 'flex-col', style: { alignItems: 'center' } },
+        el('div', { class: 'text-dim text-sm' }, 'Draw Pile'),
+        el('div', { style: { fontFamily: 'var(--font-display)', fontSize: '1.2rem', color: 'var(--accent)' } }, `${pileCount}`)
+      )
+    )
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCREEN: NAME ENTRY
+// ═══════════════════════════════════════════════════════════════════
+async function showNameScreen(prefill = '') {
+  detachListeners();
+  currentScreen = 'name';
+  clearApp();
+
+  // Check if we already have a name
+  const snap = await db.ref(`players/${myPCID}`).once('value');
+  if (snap.exists() && snap.val().name) {
+    myName = snap.val().name;
+    showLobby();
+    return;
+  }
+
+  const input = el('input', { type: 'text', placeholder: 'Your name...', value: prefill, maxlength: '16' });
+
+  const screen = el('div', { class: 'screen active' },
+    renderLogoHeader(),
+    el('div', { class: 'card flex-col gap-12' },
+      el('h3', {}, 'ENTER YOUR NAME'),
+      input,
+      el('button', { class: 'btn primary full', onClick: async () => {
+        const name = input.value.trim().replace(/\s+/g, '');
+        if (!name) { toast('Name cannot be blank'); return; }
+        if (name.toLowerCase() === 'host' || name.toLowerCase() === 'admin') { toast('Reserved name'); return; }
+        if (name.length > 16) { toast('Max 16 characters'); return; }
+        myName = name;
+        await db.ref(`players/${myPCID}`).set({ name: myName, createdAt: firebase.database.ServerValue.TIMESTAMP });
+        showLobby();
+      }}, 'ENTER')
+    ),
+    el('div', { class: 'subtitle' }, `ID: ${myPCID}`)
+  );
+
+  app.appendChild(screen);
+  input.focus();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') screen.querySelector('.btn.primary').click(); });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCREEN: LOBBY
+// ═══════════════════════════════════════════════════════════════════
+function showLobby() {
+  detachListeners();
+  currentScreen = 'lobby';
+  currentRoomId = null;
+  clearApp();
+
+  const roomListEl = el('div', { class: 'scroll-area', id: 'room-list' },
+    el('div', { class: 'subtitle' }, 'Loading rooms...')
+  );
+
+  const nameInput = el('input', { type: 'text', placeholder: 'New name...', value: myName, maxlength: '16' });
+
+  const roomNameInput = el('input', { type: 'text', placeholder: 'Room name (optional)', maxlength: '20' });
+
+  const screen = el('div', { class: 'screen active' },
+    renderLogoHeader(),
+    el('div', { class: 'flex-row flex-between' },
+      el('h2', {}, `Welcome, ${myName}`),
+      el('button', { class: 'btn small', onClick: () => {
+        const d = document.getElementById('name-edit');
+        d.style.display = d.style.display === 'none' ? 'flex' : 'none';
+      }}, '✏️')
+    ),
+    el('div', { class: 'flex-row gap-12', id: 'name-edit', style: { display: 'none' } },
+      nameInput,
+      el('button', { class: 'btn small', onClick: async () => {
+        const name = nameInput.value.trim().replace(/\s+/g, '');
+        if (!name || name.toLowerCase() === 'host' || name.toLowerCase() === 'admin') { toast('Invalid name'); return; }
+        myName = name;
+        await db.ref(`players/${myPCID}/name`).set(myName);
+        toast('Name updated!');
+        showLobby();
+      }}, 'Save')
+    ),
+    el('div', { class: 'divider' }),
+    el('h3', {}, 'ROOMS'),
+    roomListEl,
+    el('div', { class: 'divider' }),
+    el('h3', {}, 'CREATE ROOM'),
+    el('div', { class: 'flex-row gap-12' },
+      roomNameInput,
+      el('button', { class: 'btn primary', onClick: async () => {
+        const code = genRoomCode();
+        const rName = roomNameInput.value.trim() || `Room ${code}`;
+        await db.ref(`rooms/${code}`).set({
+          name: rName,
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          gameState: 'Login',
+          fascistScore: 0,
+          liberalScore: 0,
+          voteRetryCount: 0,
+          drawPolicyPile: [],
+          discardPolicyPile: [],
+          presidentVeto: false,
+          chancellorVeto: false,
+          gameElement: '',
+          toBeChancellorName: ''
+        });
+        joinRoom(code);
+      }}, '+ NEW')
+    )
+  );
+
+  app.appendChild(screen);
+
+  // Listen for rooms
+  roomsListener = db.ref('rooms');
+  roomsListener.on('value', snap => {
+    const data = snap.val() || {};
+    const rl = document.getElementById('room-list');
+    if (!rl) return;
+    rl.innerHTML = '';
+
+    const entries = Object.entries(data);
+    if (entries.length === 0) {
+      rl.appendChild(el('div', { class: 'subtitle' }, 'No rooms yet. Create one!'));
+      return;
+    }
+
+    for (const [id, room] of entries) {
+      const players = room.players ? Object.keys(room.players) : [];
+      const state = room.gameState || 'Login';
+      const iAmIn = players.includes(myPCID);
+      const canJoin = state === 'Login' || iAmIn;
+
+      const statusText = state === 'Login' ? 'Waiting' : (state.startsWith('GameEnd') ? 'Finished' : 'In Progress');
+      const statusColor = state === 'Login' ? 'var(--green)' : (state.startsWith('GameEnd') ? 'var(--text-dim)' : 'var(--accent)');
+
+      const item = el('div', { class: 'room-item', onClick: () => {
+        if (!canJoin && !iAmIn) { toast('Game in progress'); return; }
+        joinRoom(id);
+      }},
+        el('div', { class: 'room-icon' }, iAmIn ? '⭐' : '🚪'),
+        el('div', { class: 'flex-col', style: { flex: '1' } },
+          el('div', { class: 'room-name' }, room.name || id),
+          el('div', { class: 'room-meta' }, `${players.length} player${players.length !== 1 ? 's' : ''} · Code: ${id}`)
+        ),
+        el('div', { style: { color: statusColor, fontSize: '.8rem', fontWeight: '600' } }, statusText)
+      );
+      if (!canJoin) item.style.opacity = '0.5';
+      rl.appendChild(item);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// JOIN ROOM
+// ═══════════════════════════════════════════════════════════════════
+async function joinRoom(roomId) {
+  detachListeners();
+  currentRoomId = roomId;
+
+  // Register in room
+  const playerRef = db.ref(`rooms/${roomId}/players/${myPCID}`);
+  const existing = await playerRef.once('value');
+
+  if (!existing.exists()) {
+    // Check if game already started
+    const roomSnap = await db.ref(`rooms/${roomId}`).once('value');
+    const room = roomSnap.val();
+    if (room && room.gameState !== 'Login') {
+      toast('Game already started');
+      showLobby();
+      return;
+    }
+    const playersSnap = await db.ref(`rooms/${roomId}/players`).once('value');
+    const playerCount = playersSnap.numChildren();
+    await playerRef.set({
+      name: myName,
+      pcid: myPCID,
+      vip: playerCount === 0,
+      inGameStatus: 'InGame',
+      identity: 'Liberal',
+      president: false,
+      chancellor: false,
+      vote: 'null',
+      online: true
+    });
+  } else {
+    // Reconnect: update name and online status
+    await playerRef.update({ name: myName, online: true });
+  }
+
+  // Set up presence
+  playerRef.child('online').onDisconnect().set(false);
+
+  // Listen to room
+  roomListener = db.ref(`rooms/${roomId}`);
+  roomListener.on('value', snap => {
+    if (currentRoomId !== roomId) return;
+    const room = snap.val();
+    if (!room) { toast('Room deleted'); showLobby(); return; }
+    renderRoom(room, roomId);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER ROOM (main dispatcher)
+// ═══════════════════════════════════════════════════════════════════
+function renderRoom(room, roomId) {
+  currentScreen = 'room';
+  clearApp();
+
+  const players = room.players ? Object.values(room.players).sort((a, b) => (a.vip ? -1 : 0)) : [];
+  const me = room.players ? room.players[myPCID] : null;
+  if (!me) { showLobby(); return; }
+
+  const gs = room.gameState || 'Login';
+
+  if (gs === 'Login') {
+    renderWaitingRoom(room, roomId, players, me);
+  } else {
+    renderGameScreen(room, roomId, players, me, gs);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WAITING ROOM
+// ═══════════════════════════════════════════════════════════════════
+function renderWaitingRoom(room, roomId, players, me) {
+  const items = players.map(p => renderPlayerRow(p, p.pcid === myPCID));
+
+  const content = [
+    renderLogoHeader(),
+    el('div', { class: 'flex-row flex-between' },
+      el('h2', {}, room.name || roomId),
+      el('div', { class: 'text-dim text-sm' }, `Code: ${roomId}`)
+    ),
+    el('div', { class: 'divider' }),
+    el('h3', {}, `PLAYERS (${players.length})`),
+    el('div', { class: 'flex-col gap-12' }, ...items),
+  ];
+
+  if (me.vip && players.length >= 5 && players.length <= 10) {
+    content.push(
+      el('button', { class: 'btn primary full mt-16', onClick: () => startGame(roomId, room) }, `🚀 START GAME (${players.length} players)`)
+    );
+  } else if (players.length < 5) {
+    content.push(el('div', { class: 'info-banner waiting' }, `Need ${5 - players.length} more player${5 - players.length > 1 ? 's' : ''} to start`));
+  } else if (players.length > 10) {
+    content.push(el('div', { class: 'info-banner danger' }, 'Max 10 players'));
+  } else if (!me.vip) {
+    content.push(el('div', { class: 'info-banner waiting' }, 'Waiting for VIP to start...'));
+  }
+
+  content.push(
+    el('button', { class: 'btn danger full mt-8', onClick: async () => {
+      await db.ref(`rooms/${roomId}/players/${myPCID}`).remove();
+      // If I was VIP, reassign
+      const snap = await db.ref(`rooms/${roomId}/players`).once('value');
+      const remaining = snap.val();
+      if (remaining) {
+        const first = Object.keys(remaining)[0];
+        if (first) await db.ref(`rooms/${roomId}/players/${first}/vip`).set(true);
+      } else {
+        await db.ref(`rooms/${roomId}`).remove();
+      }
+      showLobby();
+    }}, 'LEAVE ROOM')
+  );
+
+  const screen = el('div', { class: 'screen active' }, ...content);
+  app.appendChild(screen);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// START GAME
+// ═══════════════════════════════════════════════════════════════════
+async function startGame(roomId, room) {
+  const players = room.players ? Object.entries(room.players) : [];
+  const n = players.length;
+
+  // Create draw pile
+  const pile = shuffle([...Array(11).fill('FASCIST'), ...Array(6).fill('LIBERAL')]);
+
+  // Assign identities
+  const identities = shuffle(identityList(n));
+
+  // Pick random president
+  const presIdx = Math.floor(Math.random() * n);
+
+  const updates = {};
+  players.forEach(([pcid, p], i) => {
+    updates[`players/${pcid}/identity`] = identities[i];
+    updates[`players/${pcid}/inGameStatus`] = 'InGame';
+    updates[`players/${pcid}/president`] = i === presIdx;
+    updates[`players/${pcid}/chancellor`] = false;
+    updates[`players/${pcid}/vote`] = 'null';
+  });
+
+  updates['gameState'] = 'ChooseChancellor';
+  updates['drawPolicyPile'] = pile;
+  updates['discardPolicyPile'] = [];
+  updates['fascistScore'] = 0;
+  updates['liberalScore'] = 0;
+  updates['voteRetryCount'] = 0;
+  updates['presidentVeto'] = false;
+  updates['chancellorVeto'] = false;
+  updates['gameElement'] = '';
+  updates['toBeChancellorName'] = '';
+
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+function identityList(n) {
+  const list = ['Hitler'];
+  const fascistCount = n <= 6 ? 1 : (n <= 8 ? 2 : 3);
+  for (let i = 0; i < fascistCount; i++) list.push('Fascist');
+  while (list.length < n) list.push('Liberal');
+  return shuffle(list);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CREATE DRAW PILE HELPER
+// ═══════════════════════════════════════════════════════════════════
+function createDrawPolicyPile() {
+  return shuffle([...Array(11).fill('FASCIST'), ...Array(6).fill('LIBERAL')]);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function renderGameScreen(room, roomId, players, me, gs) {
+  const content = [];
+
+  // Header
+  content.push(el('div', { class: 'flex-row flex-between' },
+    el('h2', {}, room.name || roomId),
+    el('button', { class: 'btn small', onClick: () => showLobby() }, '🚪')
+  ));
+
+  // Scores
+  content.push(renderScoreBoard(room));
+
+  // Player list (compact)
+  const pList = players.map(p => renderPlayerRow(p, p.pcid === myPCID));
+  content.push(el('div', { class: 'flex-col', style: { gap: '4px' } }, ...pList));
+
+  content.push(el('div', { class: 'divider' }));
+
+  // Identity badge
+  const identBadge = createIdentityBadge(me, players);
+  content.push(identBadge);
+
+  // Dead check
+  if (me.inGameStatus === 'Dead' && !gs.startsWith('GameEnd')) {
+    content.push(el('div', { class: 'info-banner danger' }, '💀 You are dead...'));
+    const screen = el('div', { class: 'screen active' }, ...content);
+    app.appendChild(screen);
+    return;
+  }
+
+  // Game end
+  if (gs === 'GameEndLIBERAL' || gs === 'GameEndFASCIST') {
+    renderGameEnd(content, room, roomId, players, me, gs);
+    const screen = el('div', { class: 'screen active' }, ...content);
+    app.appendChild(screen);
+    return;
+  }
+
+  const president = players.find(p => p.president);
+  const chancellor = players.find(p => p.chancellor);
+  const presName = president ? president.name : '???';
+
+  // Game state specific UI
+  if (gs === 'ChooseChancellor') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner action' }, '🎩 Choose a Chancellor'));
+      content.push(renderPlayerButtons(players, me, roomId, room, 'ChooseChancellor'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is choosing a Chancellor...`));
+    }
+  }
+  else if (gs === 'VoteChancellor') {
+    const chanName = room.toBeChancellorName || '???';
+    content.push(el('div', { class: 'info-banner' }, `Vote: ${chanName} as Chancellor?`));
+    if (me.vote === 'null' && me.inGameStatus !== 'Dead') {
+      content.push(renderVoteUI(roomId, room));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, me.vote !== 'null' ? `You voted ${me.vote.toUpperCase()}. Waiting...` : 'Waiting for votes...'));
+    }
+  }
+  else if (gs === 'RemovePolicy') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner action' }, '🗑️ Remove one policy (the remaining 2 go to Chancellor)'));
+      content.push(renderPolicyCards(room.drawPolicyPile, 3, roomId, room, 'RemovePolicy'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is removing a policy...`));
+    }
+  }
+  else if (gs === 'ChoosePolicy') {
+    const chanPlayer = chancellor;
+    if (me.chancellor) {
+      content.push(el('div', { class: 'info-banner action' }, '📜 Choose a policy to enact'));
+      content.push(renderPolicyCards(room.drawPolicyPile, 2, roomId, room, 'ChoosePolicy'));
+      if ((room.fascistScore || 0) >= 5) {
+        content.push(renderVetoButton(roomId, room, 'CHANCELLOR'));
+      }
+    } else if (me.president && (room.fascistScore || 0) >= 5) {
+      content.push(el('div', { class: 'info-banner waiting' }, `${chanPlayer ? chanPlayer.name : '???'} is choosing a policy...`));
+      content.push(renderVetoButton(roomId, room, 'PRESIDENT'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${chanPlayer ? chanPlayer.name : '???'} is choosing a policy...`));
+    }
+  }
+  else if (gs === 'ExaminPolicy') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner action' }, '🔍 Examine the top 3 policies'));
+      content.push(renderExaminPolicies(room.drawPolicyPile, roomId, room));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is examining policies...`));
+    }
+  }
+  else if (gs === 'ChooseExaminPlayer') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner action' }, '🔎 Choose a player to investigate'));
+      content.push(renderPlayerButtons(players, me, roomId, room, 'ChooseExaminPlayer'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is choosing someone to investigate...`));
+    }
+  }
+  else if (gs === 'ExaminPlayer') {
+    const target = room.gameElement;
+    if (me.president) {
+      const targetPlayer = players.find(p => p.name === target);
+      const ident = targetPlayer ? targetPlayer.identity : '???';
+      const cls = ident === 'Liberal' ? 'liberal-tag' : (ident === 'Hitler' ? 'hitler-tag' : 'fascist-tag');
+      content.push(el('div', { class: 'info-banner action' }, `${target}'s party membership:`));
+      content.push(el('div', { class: 'text-center' }, el('span', { class: `tag ${cls}`, style: { fontSize: '1.2rem', padding: '8px 20px' } }, ident)));
+      content.push(el('button', { class: 'btn primary full mt-8', onClick: () => {
+        advanceFromExamine(roomId, room, players);
+      }}, 'DONE'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is investigating ${target}...`));
+    }
+  }
+  else if (gs === 'ChoosePresidentPlayer') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner action' }, '🎩 Choose the next President'));
+      content.push(renderPlayerButtons(players, me, roomId, room, 'ChoosePresidentPlayer'));
+    } else {
+      content.push(el('div', { class: 'info-banner waiting' }, `${presName} is choosing the next President...`));
+    }
+  }
+  else if (gs === 'ChooseKillPlayer') {
+    if (me.president) {
+      content.push(el('div', { class: 'info-banner danger' }, '🔫 Choose a player to execute'));
+      content.push(renderPlayerButtons(players, me, roomId, room, 'ChooseKillPlayer'));
+    } else {
+      content.push(el('div', { class: 'info-banner danger' }, `${presName} is choosing someone to execute...`));
+    }
+  }
+
+  const screen = el('div', { class: 'screen active' }, ...content);
+  app.appendChild(screen);
+  buzz();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// IDENTITY BADGE
+// ═══════════════════════════════════════════════════════════════════
+function createIdentityBadge(me, players) {
+  let showing = false;
+  const badge = el('div', { class: 'identity-badge hidden-id' }, '👁️ TAP TO REVEAL IDENTITY');
+
+  badge.addEventListener('click', () => {
+    showing = !showing;
+    if (showing) {
+      const cls = me.identity === 'Liberal' ? 'liberal-id' : (me.identity === 'Hitler' ? 'hitler-id' : 'fascist-id');
+      badge.className = `identity-badge ${cls}`;
+      let text = `YOU ARE ${me.identity.toUpperCase()}`;
+      if (me.identity === 'Fascist' || (players.length < 7 && me.identity === 'Hitler')) {
+        const allies = players.filter(p => p.pcid !== myPCID && p.identity !== 'Liberal');
+        if (allies.length > 0) {
+          text += '\n' + allies.map(a => `${a.name}: ${a.identity}`).join('\n');
+        }
+      }
+      badge.textContent = text;
+      badge.style.whiteSpace = 'pre-line';
+    } else {
+      badge.className = 'identity-badge hidden-id';
+      badge.textContent = '👁️ TAP TO REVEAL IDENTITY';
+    }
+  });
+
+  return badge;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GAME END
+// ═══════════════════════════════════════════════════════════════════
+function renderGameEnd(content, room, roomId, players, me, gs) {
+  const liberalWin = gs === 'GameEndLIBERAL';
+  const msg = liberalWin ? '🕊️ LIBERALS WIN!' : '☠️ FASCISTS WIN!';
+  const cls = liberalWin ? 'win-liberal' : 'win-fascist';
+  content.push(el('div', { class: `info-banner ${cls}` }, msg));
+
+  // Show all identities
+  const rows = players.map(p => {
+    const tagCls = p.identity === 'Liberal' ? 'liberal-tag' : (p.identity === 'Hitler' ? 'hitler-tag' : 'fascist-tag');
+    return el('div', { class: 'player-row' + (p.pcid === myPCID ? ' me' : '') },
+      el('span', { class: 'name' }, p.name),
+      el('span', { class: `tag ${tagCls}` }, p.identity)
+    );
+  });
+  content.push(el('div', { class: 'flex-col', style: { gap: '4px' } }, ...rows));
+
+  if (me.vip) {
+    content.push(el('button', { class: 'btn primary full mt-16', onClick: () => startGame(roomId, room) }, '🔄 PLAY AGAIN (SAME PLAYERS)'));
+    content.push(el('button', { class: 'btn danger full', onClick: () => resetRoom(roomId) }, '🏠 BACK TO LOBBY'));
+  }
+}
+
+async function resetRoom(roomId) {
+  const snap = await db.ref(`rooms/${roomId}/players`).once('value');
+  const players = snap.val() || {};
+  const updates = {
+    gameState: 'Login',
+    fascistScore: 0, liberalScore: 0, voteRetryCount: 0,
+    drawPolicyPile: [], discardPolicyPile: [],
+    presidentVeto: false, chancellorVeto: false,
+    gameElement: '', toBeChancellorName: ''
+  };
+  for (const pcid of Object.keys(players)) {
+    updates[`players/${pcid}/identity`] = 'Liberal';
+    updates[`players/${pcid}/inGameStatus`] = 'InGame';
+    updates[`players/${pcid}/president`] = false;
+    updates[`players/${pcid}/chancellor`] = false;
+    updates[`players/${pcid}/vote`] = 'null';
+  }
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PLAYER SELECT BUTTONS
+// ═══════════════════════════════════════════════════════════════════
+function renderPlayerButtons(players, me, roomId, room, action) {
+  let selectedName = null;
+  const container = el('div', { class: 'flex-col gap-12' });
+
+  // Determine which players should be excluded based on the last chancellor
+  const eligible = players.filter(p => {
+    if (p.pcid === myPCID) return false;
+    if (p.inGameStatus === 'Dead') return false;
+    if (action === 'ChooseChancellor') {
+      // Cannot pick current chancellor or current president
+      if (p.chancellor) return false;
+      // Term limit: if >5 alive, last chancellor can't be picked
+      const alive = players.filter(pp => pp.inGameStatus !== 'Dead').length;
+      // Note: president is already excluded (self)
+    }
+    return true;
+  });
+
+  const btns = [];
+  eligible.forEach(p => {
+    const btn = el('button', { class: 'btn full' }, p.name);
+    btn.addEventListener('click', () => {
+      btns.forEach(b => b.className = 'btn full');
+      if (selectedName === p.name) { selectedName = null; }
+      else { selectedName = p.name; btn.className = 'btn full selected'; }
+    });
+    btns.push(btn);
+    container.appendChild(btn);
+  });
+
+  const submit = el('button', { class: 'btn primary full mt-8', onClick: async () => {
+    if (!selectedName) { toast('Select a player'); return; }
+    await handlePlayerAction(roomId, room, players, action, selectedName);
+  }}, 'SUBMIT');
+  container.appendChild(submit);
+
+  return container;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VOTE UI
+// ═══════════════════════════════════════════════════════════════════
+function renderVoteUI(roomId, room) {
+  let selected = null;
+  const jaCard = el('div', { class: 'vote-card ja' }, 'JA!');
+  const neinCard = el('div', { class: 'vote-card nein' }, 'NEIN');
+
+  jaCard.addEventListener('click', () => {
+    selected = 'ja'; jaCard.className = 'vote-card ja selected'; neinCard.className = 'vote-card nein';
+  });
+  neinCard.addEventListener('click', () => {
+    selected = 'nein'; neinCard.className = 'vote-card nein selected'; jaCard.className = 'vote-card ja';
+  });
+
+  return el('div', { class: 'flex-col gap-12' },
+    el('div', { class: 'vote-row' }, jaCard, neinCard),
+    el('button', { class: 'btn primary full', onClick: async () => {
+      if (!selected) { toast('Cast your vote'); return; }
+      await db.ref(`rooms/${roomId}/players/${myPCID}/vote`).set(selected);
+      // Check if all votes are in
+      await checkVoteResults(roomId, room);
+    }}, 'SUBMIT VOTE')
+  );
+}
+
+async function checkVoteResults(roomId, room) {
+  const snap = await db.ref(`rooms/${roomId}`).once('value');
+  const r = snap.val();
+  if (!r || !r.players) return;
+
+  const players = Object.entries(r.players);
+  let ja = 0, nein = 0, dead = 0;
+  for (const [_, p] of players) {
+    if (p.inGameStatus === 'Dead') { dead++; continue; }
+    if (p.vote === 'ja') ja++;
+    else if (p.vote === 'nein') nein++;
+  }
+
+  const totalAlive = players.length - dead;
+  if (ja + nein < totalAlive) return; // Not all voted
+
+  const updates = {};
+  const chanName = r.toBeChancellorName;
+  const pile = r.drawPolicyPile || [];
+  let discard = r.discardPolicyPile || [];
+  let fs = r.fascistScore || 0;
+  let ls = r.liberalScore || 0;
+  let retry = r.voteRetryCount || 0;
+
+  if (ja > nein) {
+    // Chancellor elected
+    for (const [pcid, p] of players) {
+      if (p.name === chanName) updates[`players/${pcid}/chancellor`] = true;
+    }
+
+    // Check Hitler as chancellor
+    if (fs >= 3) {
+      const hitlerPlayer = players.find(([_, p]) => p.name === chanName && p.identity === 'Hitler');
+      if (hitlerPlayer) {
+        updates['gameState'] = 'GameEndFASCIST';
+        await db.ref(`rooms/${roomId}`).update(updates);
+        return;
+      }
+    }
+
+    updates['gameState'] = 'RemovePolicy';
+    updates['voteRetryCount'] = 0;
+    // Reset votes
+    for (const [pcid] of players) updates[`players/${pcid}/vote`] = 'null';
+  } else {
+    // Vote failed
+    retry++;
+    for (const [pcid] of players) updates[`players/${pcid}/vote`] = 'null';
+    updates['toBeChancellorName'] = '';
+
+    if (retry > 3) {
+      retry = 0;
+      if (pile.length > 0) {
+        const topPolicy = pile.pop();
+        discard.push(topPolicy);
+        if (topPolicy === 'FASCIST') fs++;
+        else ls++;
+        updates['drawPolicyPile'] = pile;
+        updates['discardPolicyPile'] = discard;
+        updates['fascistScore'] = fs;
+        updates['liberalScore'] = ls;
+
+        if (ls >= 5) { updates['gameState'] = 'GameEndLIBERAL'; updates['voteRetryCount'] = retry; await db.ref(`rooms/${roomId}`).update(updates); return; }
+        if (fs >= 6) { updates['gameState'] = 'GameEndFASCIST'; updates['voteRetryCount'] = retry; await db.ref(`rooms/${roomId}`).update(updates); return; }
+
+        // Check special actions for chaos policy
+        const n = players.length;
+        const specState = getSpecialActionState(fs, n);
+        if (specState) {
+          updates['gameState'] = specState;
+          updates['voteRetryCount'] = retry;
+          if (pile.length < 3) { reshufflePile(pile, discard); updates['drawPolicyPile'] = pile; updates['discardPolicyPile'] = []; }
+          // President does NOT advance for special actions - current president performs them
+          await db.ref(`rooms/${roomId}`).update(updates);
+          return;
+        }
+      }
+
+      if (pile.length < 3) { reshufflePile(pile, discard); updates['drawPolicyPile'] = pile; updates['discardPolicyPile'] = []; }
+    }
+
+    updates['voteRetryCount'] = retry;
+    updates['gameState'] = 'ChooseChancellor';
+    advancePresidentInUpdates(players, updates, '');
+  }
+
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POLICY CARDS
+// ═══════════════════════════════════════════════════════════════════
+function renderPolicyCards(pile, count, roomId, room, action) {
+  let selectedIdx = null;
+  const start = Math.max(0, (pile ? pile.length : 0) - count);
+  const cards = [];
+  const cardEls = [];
+
+  for (let i = start; i < (pile ? pile.length : 0); i++) {
+    const policy = pile[i];
+    const cls = policy === 'FASCIST' ? 'f-card' : 'l-card';
+    const idx = i;
+    const card = el('div', { class: `policy-card ${cls}` },
+      el('div', { style: { fontSize: '1.8rem' } }, policy === 'FASCIST' ? '☠️' : '🕊️'),
+      el('div', {}, policy)
+    );
+    card.addEventListener('click', () => {
+      cardEls.forEach(c => c.className = c.className.replace(' selected', ''));
+      if (selectedIdx === idx) { selectedIdx = null; }
+      else { selectedIdx = idx; card.className += ' selected'; }
+    });
+    cardEls.push(card);
+    cards.push(card);
+  }
+
+  return el('div', { class: 'flex-col gap-12' },
+    el('div', { class: 'policy-cards-row' }, ...cards),
+    el('button', { class: 'btn primary full', onClick: async () => {
+      if (selectedIdx === null) { toast('Select a policy'); return; }
+      if (action === 'RemovePolicy') {
+        await handleRemovePolicy(roomId, room, selectedIdx);
+      } else if (action === 'ChoosePolicy') {
+        await handleChoosePolicy(roomId, room, selectedIdx);
+      }
+    }}, 'SUBMIT')
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXAMINE POLICIES (read-only view)
+// ═══════════════════════════════════════════════════════════════════
+function renderExaminPolicies(pile, roomId, room) {
+  const start = Math.max(0, (pile ? pile.length : 0) - 3);
+  const cards = [];
+  for (let i = start; i < (pile ? pile.length : 0); i++) {
+    const policy = pile[i];
+    const cls = policy === 'FASCIST' ? 'f-card' : 'l-card';
+    cards.push(el('div', { class: `policy-card ${cls}` },
+      el('div', { style: { fontSize: '1.8rem' } }, policy === 'FASCIST' ? '☠️' : '🕊️'),
+      el('div', {}, policy)
+    ));
+  }
+
+  return el('div', { class: 'flex-col gap-12' },
+    el('div', { class: 'policy-cards-row' }, ...cards),
+    el('button', { class: 'btn primary full', onClick: () => advanceFromExamine(roomId, room) }, 'DONE')
+  );
+}
+
+async function advanceFromExamine(roomId, room) {
+  const snap = await db.ref(`rooms/${roomId}`).once('value');
+  const r = snap.val();
+  const players = Object.entries(r.players || {});
+  const updates = { gameState: 'ChooseChancellor', gameElement: '' };
+  advancePresidentInUpdates(players, updates, '');
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VETO BUTTON
+// ═══════════════════════════════════════════════════════════════════
+function renderVetoButton(roomId, room, role) {
+  const key = role === 'PRESIDENT' ? 'presidentVeto' : 'chancellorVeto';
+  const currentVal = room[key] || false;
+
+  return el('div', { class: 'flex-col gap-12' },
+    el('div', { class: 'info-banner danger' }, 'Veto power is active! Both President and Chancellor must agree to veto.'),
+    el('button', { class: `btn danger full ${currentVal ? 'selected' : ''}`, onClick: async () => {
+      const newVal = !currentVal;
+      await db.ref(`rooms/${roomId}/${key}`).set(newVal);
+
+      // Check if both veto
+      const snap = await db.ref(`rooms/${roomId}`).once('value');
+      const r = snap.val();
+      if (r.presidentVeto && r.chancellorVeto) {
+        const players = Object.entries(r.players || {});
+        const updates = {
+          gameState: 'ChooseChancellor',
+          presidentVeto: false,
+          chancellorVeto: false,
+          gameElement: ''
+        };
+        advancePresidentInUpdates(players, updates, '');
+        await db.ref(`rooms/${roomId}`).update(updates);
+      }
+    }}, currentVal ? 'VETO CONFIRMED ✓' : `${role}: VETO?`)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HANDLE PLAYER ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+async function handlePlayerAction(roomId, room, players, action, selectedName) {
+  const snap = await db.ref(`rooms/${roomId}`).once('value');
+  const r = snap.val();
+  const rPlayers = Object.entries(r.players || {});
+  const updates = {};
+
+  if (action === 'ChooseChancellor') {
+    // Reset votes
+    for (const [pcid] of rPlayers) {
+      updates[`players/${pcid}/vote`] = 'null';
+      updates[`players/${pcid}/chancellor`] = false;
+    }
+    updates['toBeChancellorName'] = selectedName;
+    updates['gameState'] = 'VoteChancellor';
+  }
+  else if (action === 'ChooseExaminPlayer') {
+    updates['gameState'] = 'ExaminPlayer';
+    updates['gameElement'] = selectedName;
+  }
+  else if (action === 'ChoosePresidentPlayer') {
+    updates['gameState'] = 'ChooseChancellor';
+    advancePresidentInUpdates(rPlayers, updates, selectedName);
+  }
+  else if (action === 'ChooseKillPlayer') {
+    for (const [pcid, p] of rPlayers) {
+      if (p.name === selectedName) {
+        updates[`players/${pcid}/inGameStatus`] = 'Dead';
+        if (p.identity === 'Hitler') {
+          updates['gameState'] = 'GameEndLIBERAL';
+          await db.ref(`rooms/${roomId}`).update(updates);
+          return;
+        }
+      }
+    }
+    updates['gameState'] = 'ChooseChancellor';
+    advancePresidentInUpdates(rPlayers, updates, '');
+  }
+
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+async function handleRemovePolicy(roomId, room, removeIdx) {
+  const snap = await db.ref(`rooms/${roomId}`).once('value');
+  const r = snap.val();
+  const pile = r.drawPolicyPile || [];
+  const discard = r.discardPolicyPile || [];
+  const removed = pile.splice(removeIdx, 1)[0];
+  discard.push(removed);
+
+  const updates = {
+    drawPolicyPile: pile,
+    discardPolicyPile: discard,
+    gameState: 'ChoosePolicy',
+    gameElement: (r.fascistScore || 0) >= 5 ? 'VETO' : ''
+  };
+
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+async function handleChoosePolicy(roomId, room, chosenIdx) {
+  const snap = await db.ref(`rooms/${roomId}`).once('value');
+  const r = snap.val();
+  const pile = [...(r.drawPolicyPile || [])];
+  const discard = [...(r.discardPolicyPile || [])];
+  let fs = r.fascistScore || 0;
+  let ls = r.liberalScore || 0;
+  const players = Object.entries(r.players || {});
+
+  // Chancellor sees last 2 cards. chosenIdx is absolute index into pile.
+  const last2Start = Math.max(0, pile.length - 2);
+  const chosen = pile[chosenIdx];
+
+  // Discard the non-chosen card
+  for (let i = last2Start; i < pile.length; i++) {
+    if (i !== chosenIdx) discard.push(pile[i]);
+  }
+  // Remove both cards from pile
+  pile.splice(last2Start, pile.length - last2Start);
+
+  // Score
+  if (chosen === 'FASCIST') fs++;
+  else ls++;
+
+  const updates = {
+    drawPolicyPile: pile,
+    discardPolicyPile: discard,
+    fascistScore: fs,
+    liberalScore: ls,
+    presidentVeto: false,
+    chancellorVeto: false,
+    gameElement: ''
+  };
+
+  // Check win
+  if (ls >= 5) { updates['gameState'] = 'GameEndLIBERAL'; await db.ref(`rooms/${roomId}`).update(updates); return; }
+  if (fs >= 6) { updates['gameState'] = 'GameEndFASCIST'; await db.ref(`rooms/${roomId}`).update(updates); return; }
+
+  // Reshuffle if needed
+  if (pile.length < 3) {
+    reshufflePile(pile, discard);
+    updates['drawPolicyPile'] = pile;
+    updates['discardPolicyPile'] = [];
+  }
+
+  // Special action?
+  if (chosen === 'FASCIST') {
+    const n = players.length;
+    const specState = getSpecialActionState(fs, n);
+    if (specState) {
+      updates['gameState'] = specState;
+      await db.ref(`rooms/${roomId}`).update(updates);
+      return;
+    }
+  }
+
+  // Normal: next president
+  updates['gameState'] = 'ChooseChancellor';
+  advancePresidentInUpdates(players, updates, '');
+  await db.ref(`rooms/${roomId}`).update(updates);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPECIAL ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+function getSpecialActionState(fs, n) {
+  if ((n === 7 || n === 8) && fs === 2) return 'ChooseExaminPlayer';
+  if (n >= 9 && (fs === 1 || fs === 2)) return 'ChooseExaminPlayer';
+  if (n < 7 && fs === 3) return 'ExaminPolicy';
+  if (n >= 7 && fs === 3) return 'ChoosePresidentPlayer';
+  if (fs === 4 || fs === 5) return 'ChooseKillPlayer';
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PRESIDENT ADVANCEMENT
+// ═══════════════════════════════════════════════════════════════════
+function advancePresidentInUpdates(players, updates, targetName) {
+  // Find current president index
+  let presIdx = -1;
+  const order = players.map(([pcid, p], i) => ({ pcid, ...p, idx: i }));
+
+  if (targetName) {
+    presIdx = order.findIndex(p => p.name === targetName);
+  } else {
+    const currentPres = order.findIndex(p => p.president);
+    presIdx = currentPres + 1;
+    if (presIdx >= order.length) presIdx = 0;
+    // Skip dead players
+    let attempts = 0;
+    while (order[presIdx].inGameStatus === 'Dead' && attempts < order.length) {
+      presIdx = (presIdx + 1) % order.length;
+      attempts++;
+    }
+  }
+
+  // Clear all president/chancellor
+  for (const [pcid] of players) {
+    updates[`players/${pcid}/president`] = false;
+    updates[`players/${pcid}/chancellor`] = false;
+  }
+  // Set new president
+  if (presIdx >= 0 && presIdx < players.length) {
+    updates[`players/${players[presIdx][0]}/president`] = true;
+  }
+}
+
+function reshufflePile(pile, discard) {
+  const shuffled = shuffle(discard);
+  // Add shuffled discard to bottom of pile
+  pile.unshift(...shuffled);
+  discard.length = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DETACH LISTENERS
+// ═══════════════════════════════════════════════════════════════════
+function detachListeners() {
+  if (roomListener) { roomListener.off(); roomListener = null; }
+  if (roomsListener) { roomsListener.off(); roomsListener = null; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN PANEL
+// ═══════════════════════════════════════════════════════════════════
+function showAdmin() {
+  detachListeners();
+  currentScreen = 'admin';
+  clearApp();
+
+  const roomsArea = el('div', { id: 'admin-rooms', class: 'flex-col gap-12' }, el('div', { class: 'subtitle' }, 'Loading...'));
+  const playersArea = el('div', { id: 'admin-players', class: 'flex-col gap-12' }, el('div', { class: 'subtitle' }, 'Loading...'));
+
+  const newPcidName = el('input', { type: 'text', placeholder: 'Player name' });
+
+  const screen = el('div', { class: 'screen active' },
+    renderLogoHeader(),
+    el('h2', {}, '🔧 ADMIN PANEL'),
+    el('div', { class: 'subtitle' }, `Your PCID: ${myPCID}`),
+    el('button', { class: 'btn full', onClick: () => { window.location.hash = ''; route(); }}, '← BACK TO LOBBY'),
+    el('div', { class: 'divider' }),
+    el('h3', {}, 'ROOMS'),
+    roomsArea,
+    el('div', { class: 'divider' }),
+    el('h3', {}, 'PLAYERS'),
+    playersArea,
+    el('div', { class: 'divider' }),
+    el('h3', {}, 'CREATE PLAYER'),
+    el('div', { class: 'flex-row gap-12' },
+      newPcidName,
+      el('button', { class: 'btn small primary', onClick: async () => {
+        const name = newPcidName.value.trim();
+        if (!name) { toast('Enter a name'); return; }
+        const newPcid = Array.from({ length: 12 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)]).join('');
+        await db.ref(`players/${newPcid}`).set({ name, createdAt: firebase.database.ServerValue.TIMESTAMP });
+        toast(`Created ${name} (${newPcid})`);
+        newPcidName.value = '';
+      }}, '+ ADD')
+    )
+  );
+
+  app.appendChild(screen);
+
+  // Load rooms
+  db.ref('rooms').on('value', snap => {
+    const area = document.getElementById('admin-rooms');
+    if (!area) return;
+    area.innerHTML = '';
+    const data = snap.val() || {};
+    if (Object.keys(data).length === 0) {
+      area.appendChild(el('div', { class: 'subtitle' }, 'No rooms'));
+      return;
+    }
+    for (const [id, room] of Object.entries(data)) {
+      const playerCount = room.players ? Object.keys(room.players).length : 0;
+      const renameInput = el('input', { type: 'text', placeholder: 'New name', value: room.name || '', style: { flex: '1', padding: '6px 8px', fontSize: '.8rem' } });
+      area.appendChild(el('div', { class: 'card flex-col', style: { gap: '8px' } },
+        el('div', { class: 'flex-row flex-between' },
+          el('strong', {}, `${room.name || id} [${id}]`),
+          el('span', { class: 'text-dim text-sm' }, `${playerCount}p · ${room.gameState}`)
+        ),
+        el('div', { class: 'flex-row gap-12' },
+          renameInput,
+          el('button', { class: 'btn small', onClick: async () => {
+            await db.ref(`rooms/${id}/name`).set(renameInput.value.trim() || id);
+            toast('Renamed');
+          }}, 'Rename'),
+          el('button', { class: 'btn small danger', onClick: async () => {
+            if (confirm(`Delete room ${id}?`)) {
+              await db.ref(`rooms/${id}`).remove();
+              toast('Deleted');
+            }
+          }}, '🗑️')
+        ),
+        // Show players in room
+        ...(room.players ? Object.entries(room.players).map(([pcid, p]) =>
+          el('div', { class: 'flex-row flex-between text-sm', style: { padding: '2px 8px' } },
+            el('span', {}, `${p.name} (${pcid.substring(0,6)}...)`),
+            el('span', { class: 'text-dim' }, `${p.identity || '-'} ${p.inGameStatus || '-'}`)
+          )
+        ) : [])
+      ));
+    }
+  });
+
+  // Load players
+  db.ref('players').on('value', snap => {
+    const area = document.getElementById('admin-players');
+    if (!area) return;
+    area.innerHTML = '';
+    const data = snap.val() || {};
+    if (Object.keys(data).length === 0) {
+      area.appendChild(el('div', { class: 'subtitle' }, 'No players'));
+      return;
+    }
+    for (const [pcid, player] of Object.entries(data)) {
+      const nameIn = el('input', { type: 'text', value: player.name || '', style: { flex: '1', padding: '6px 8px', fontSize: '.8rem' } });
+      area.appendChild(el('div', { class: 'card flex-row gap-12', style: { alignItems: 'center' } },
+        el('span', { class: 'mono text-dim', style: { fontSize: '.65rem', minWidth: '80px' } }, pcid),
+        nameIn,
+        el('button', { class: 'btn small', onClick: async () => {
+          await db.ref(`players/${pcid}/name`).set(nameIn.value.trim());
+          toast('Renamed');
+        }}, '✏️'),
+        el('button', { class: 'btn small danger', onClick: async () => {
+          if (confirm(`Delete player ${pcid}?`)) {
+            await db.ref(`players/${pcid}`).remove();
+            toast('Deleted');
+          }
+        }}, '🗑️')
+      ));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ROUTING
+// ═══════════════════════════════════════════════════════════════════
+function route() {
+  const hash = window.location.hash.replace('#', '');
+
+  if (hash === 'admin' || hash.startsWith('admin')) {
+    showAdmin();
+  } else if (hash.startsWith('room/')) {
+    const roomId = hash.split('/')[1];
+    if (roomId) {
+      if (!myName) {
+        // Need name first, then join
+        showNameScreenThenJoin(roomId);
+      } else {
+        joinRoom(roomId);
+      }
+    } else {
+      showNameScreen();
+    }
+  } else {
+    showNameScreen();
+  }
+}
+
+async function showNameScreenThenJoin(roomId) {
+  const snap = await db.ref(`players/${myPCID}`).once('value');
+  if (snap.exists() && snap.val().name) {
+    myName = snap.val().name;
+    joinRoom(roomId);
+  } else {
+    showNameScreen();
+  }
+}
+
+// Also support /admin path (for GitHub Pages, interpret path segments from URL)
+function checkPathForAdmin() {
+  const path = window.location.pathname;
+  if (path.endsWith('/admin') || path.endsWith('/admin/')) {
+    window.location.hash = 'admin';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+checkPathForAdmin();
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
