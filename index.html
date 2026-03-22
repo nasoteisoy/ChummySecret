@@ -167,6 +167,15 @@ input[type="text"]:focus { border-color: var(--accent); }
 .reset-vote-banner { background: rgba(233,69,96,.1); border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px; text-align: center; margin-top: 10px; }
 .reset-vote-banner h3 { color: var(--accent); }
 
+.paused-banner { background: rgba(255,165,0,.12); border: 1px solid orange; border-radius: var(--radius); padding: 14px; text-align: center; margin-bottom: 10px; }
+.paused-banner h3 { color: orange; }
+.badge-vacant { background: orange; color: #111; }
+.swap-card { cursor: pointer; border: 2px solid rgba(255,165,0,.3); transition: border-color .15s, transform .15s; }
+.swap-card:hover { border-color: orange; transform: translateY(-2px); }
+.swap-card .swap-name { font-family: 'Cinzel', serif; color: orange; font-size: 1em; }
+.btn-leave { background: #8b4513; color: #fff; }
+.btn-leave:hover { box-shadow: 0 0 16px rgba(139,69,19,.5); }
+
 .host-board { display: flex; gap: 20px; flex-wrap: wrap; }
 .host-players { flex: 1; min-width: 280px; }
 .host-game { flex: 2; min-width: 400px; }
@@ -330,9 +339,27 @@ function getMe(rd) { return (rd && rd.players) ? rd.players[myPCID] || null : nu
 function getPresident(a) { return a.find(p => p.president) || null; }
 function getChancellor(a) { return a.find(p => p.chancellor) || null; }
 
+function getVacantPlayers(players) { return players.filter(p => p.vacant && p.inGameStatus !== 'Dead'); }
+function isGamePaused(room, players) {
+  const gs = room.gameState || 'Login';
+  if (gs === 'Login' || gs.startsWith('GameEnd')) return false;
+  return getVacantPlayers(players).length > 0;
+}
+
+function findNextActivePcid(order, players, skipPcid) {
+  // Find next non-vacant, non-dead player in order after skipPcid
+  for (const pcid of order) {
+    if (pcid === skipPcid) continue;
+    const p = players[pcid];
+    if (p && !p.vacant && p.inGameStatus !== 'Dead') return pcid;
+  }
+  return null;
+}
+
 function allVotesIn(players) {
   for (const p of players) {
-    if (p.inGameStatus !== 'Dead' && (!p.vote || p.vote === 'null')) return false;
+    if (p.inGameStatus === 'Dead' || p.vacant) continue;
+    if (!p.vote || p.vote === 'null') return false;
   }
   return true;
 }
@@ -440,11 +467,17 @@ function showLobby() {
       const pls = room.players ? Object.keys(room.players) : [];
       const gs = room.gameState || 'Login';
       const isMy = pls.includes(myPCID);
-      if (gs !== 'Login' && !isMy) continue;
+      const vacantCount = room.players ? Object.values(room.players).filter(p => p.vacant).length : 0;
+      const hasVacancy = vacantCount > 0 && gs !== 'Login' && !gs.startsWith('GameEnd');
+      // Show if: not started, I'm in it, or has vacant spots
+      if (gs !== 'Login' && !isMy && !hasVacancy) continue;
       const div = document.createElement('div');
       div.className = 'card room-card';
+      let infoLine = `${pls.length} player${pls.length !== 1 ? 's' : ''} · ${gs !== 'Login' ? 'In Progress' : 'Waiting'}`;
+      if (isMy) infoLine += '<span class="rejoin"> · Rejoin</span>';
+      if (hasVacancy) infoLine += `<span style="color:orange;font-weight:700;"> · ${vacantCount} spot${vacantCount > 1 ? 's' : ''} open</span>`;
       div.innerHTML = `<div class="room-name">${room.name || id}</div>
-        <div class="room-info">${pls.length} player${pls.length !== 1 ? 's' : ''} · ${gs !== 'Login' ? 'In Progress' : 'Waiting'}${isMy ? '<span class="rejoin"> · Rejoin</span>' : ''}</div>
+        <div class="room-info">${infoLine}</div>
         <div class="text-dim text-sm" style="margin-top:2px;">ID: ${id}</div>`;
       div.onclick = () => { location.hash = '#room/' + id; };
       c.appendChild(div);
@@ -456,10 +489,6 @@ function showLobby() {
 function toggleMute() { audioMuted = !audioMuted; const b = document.getElementById('muteBtn'); if (b) b.textContent = audioMuted ? '🔇' : '🔊'; }
 
 function backToLobby() {
-  if (currentRoomData && currentRoomData.gameState && currentRoomData.gameState !== 'Login'
-      && !currentRoomData.gameState.startsWith('GameEnd')) {
-    if (!confirm('Game is in progress. You can rejoin later from the lobby. Leave?')) return;
-  }
   currentRoom = null;
   currentRoomData = null;
   location.hash = '#lobby';
@@ -515,7 +544,7 @@ async function submitResetVote(roomId, vote) {
   if (!room || !room.resetVote || !room.resetVote.votes) return;
 
   const players = getPlayerArray(room);
-  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead');
+  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead' && !p.vacant);
   const votes = room.resetVote.votes;
   let ja = 0, nein = 0, total = 0;
   for (const p of livingPlayers) {
@@ -542,7 +571,7 @@ async function submitResetVote(roomId, vote) {
 function renderResetVoteBanner(roomId, room, players, me) {
   const rv = room.resetVote;
   if (!rv || !rv.votes) return '';
-  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead');
+  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead' && !p.vacant);
   const myVote = rv.votes[myPCID];
   const totalVoted = Object.keys(rv.votes).length;
 
@@ -619,9 +648,18 @@ async function enterRoom(roomId) {
   const gs = room.gameState || 'Login';
   const players = room.players || {};
   const playerOrder = room.playerOrder || [];
+  const meInRoom = players[myPCID];
 
-  if (!players[myPCID]) {
-    if (gs !== 'Login') { toast('Game already started'); location.hash = '#lobby'; return; }
+  if (meInRoom) {
+    // I'm in the room — if I was marked vacant, welcome back
+    if (meInRoom.vacant) {
+      await db.ref().update({
+        [`rooms/${roomId}/players/${myPCID}/vacant`]: false,
+        [`rooms/${roomId}/players/${myPCID}/name`]: myName
+      });
+    }
+  } else if (gs === 'Login') {
+    // Normal join during lobby
     for (const pcid in players) {
       if (players[pcid].name === myName && pcid !== myPCID) { toast('Name already in use in this room'); location.hash = '#lobby'; return; }
     }
@@ -631,6 +669,15 @@ async function enterRoom(roomId) {
       president: false, chancellor: false, vote: 'null'
     });
     await db.ref('rooms/' + roomId + '/playerOrder').set([...playerOrder, myPCID]);
+  } else {
+    // Game in progress, I'm not in it — check for vacant spots
+    const vacantPcids = playerOrder.filter(pcid => players[pcid] && players[pcid].vacant);
+    if (vacantPcids.length === 0) {
+      toast('Game in progress — no open spots');
+      location.hash = '#lobby';
+      return;
+    }
+    // Don't add myself yet — renderRoom will show swap screen
   }
 
   const ref = db.ref('rooms/' + roomId);
@@ -649,9 +696,97 @@ function renderRoom(roomId, room) {
   const gs = room.gameState || 'Login';
   const players = getPlayerArray(room);
   const me = getMe(room);
-  if (!me) { app.innerHTML = '<div class="loader">Reconnecting...</div>'; enterRoom(roomId); return; }
+
+  if (!me) {
+    // Not in room — check if there are vacant spots to swap into
+    const vacants = getVacantPlayers(players);
+    if (vacants.length > 0 && gs !== 'Login') {
+      renderSwapScreen(roomId, room, players, vacants);
+      return;
+    }
+    // No vacancies and not in room — shouldn't happen, go to lobby
+    location.hash = '#lobby';
+    return;
+  }
+
   if (gs === 'Login') renderLobbyWait(roomId, room, players, me);
   else renderGamePlayer(roomId, room, players, me);
+}
+
+function renderSwapScreen(roomId, room, players, vacants) {
+  let html = `
+    <h1>Game In Progress</h1>
+    <h2>${room.name || roomId}</h2>
+    <div class="card text-center">
+      <div class="paused-banner" style="border:none;background:none;padding:0;">
+        <h3>⏸ Game is paused — players needed!</h3>
+        <div class="text-dim text-sm mt">Choose a vacant spot to take over</div>
+      </div>
+    </div>`;
+
+  html += '<div class="flex-col gap-sm mt">';
+  for (const v of vacants) {
+    html += `<div class="card swap-card" onclick="swapIntoSpot('${roomId}','${v.pcid}')">
+      <div class="swap-name">${v.name} <span class="badge badge-vacant">Vacant</span></div>
+      <div class="text-dim text-sm" style="margin-top:4px;">
+        ${v.identity !== 'Liberal' ? '' : ''}Role: Hidden · ${v.president ? 'President' : v.chancellor ? 'Chancellor' : 'Player'}
+        ${v.inGameStatus === 'Dead' ? ' · Dead' : ''}
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+
+  // Show all players for context
+  html += '<div class="card mt"><h3>All Players</h3><div class="flex-col gap-sm mt">';
+  for (const p of players) {
+    let badges = '';
+    if (p.vacant) badges += '<span class="badge badge-vacant">Vacant</span>';
+    if (p.president) badges += '<span class="badge badge-pres">President</span>';
+    if (p.chancellor) badges += '<span class="badge badge-chan">Chancellor</span>';
+    if (p.inGameStatus === 'Dead') badges += '<span class="badge badge-dead">Dead</span>';
+    html += `<div class="player-row"><div class="name">${p.name}</div><div class="badges">${badges}</div></div>`;
+  }
+  html += '</div></div>';
+
+  html += `<button class="btn btn-ghost btn-sm mt" onclick="location.hash='#lobby'" style="align-self:center;">Back to Lobby</button>`;
+
+  app.innerHTML = html;
+}
+
+async function swapIntoSpot(roomId, oldPcid) {
+  if (!confirm('Take over this player spot? You will inherit their role and game state.')) return;
+
+  const snap = await db.ref('rooms/' + roomId).once('value');
+  const room = snap.val();
+  if (!room) { toast('Room not found'); return; }
+
+  const oldPlayer = room.players[oldPcid];
+  if (!oldPlayer || !oldPlayer.vacant) { toast('Spot already taken'); return; }
+
+  const order = room.playerOrder || [];
+  const u = {};
+
+  // Copy game data to my PCID
+  u[`rooms/${roomId}/players/${myPCID}`] = {
+    name: myName,
+    vip: oldPlayer.vip || false,
+    identity: oldPlayer.identity || 'Liberal',
+    inGameStatus: oldPlayer.inGameStatus || 'InGame',
+    president: oldPlayer.president || false,
+    chancellor: oldPlayer.chancellor || false,
+    vote: oldPlayer.vote || 'null',
+    vacant: false
+  };
+
+  // Remove old PCID
+  u[`rooms/${roomId}/players/${oldPcid}`] = null;
+
+  // Replace old PCID with mine in playerOrder
+  const newOrder = order.map(pcid => pcid === oldPcid ? myPCID : pcid);
+  u[`rooms/${roomId}/playerOrder`] = newOrder;
+
+  await db.ref().update(u);
+  toast('You replaced ' + oldPlayer.name);
 }
 
 function renderLobbyWait(roomId, room, players, me) {
@@ -687,19 +822,60 @@ async function leaveRoom(roomId) {
   const snap = await db.ref('rooms/' + roomId).once('value');
   if (!snap.exists()) { location.hash = '#lobby'; return; }
   const room = snap.val();
-  if (room.gameState !== 'Login') { toast("Can't leave during a game"); return; }
-  // Stop listening BEFORE removing player, otherwise the listener re-adds us
+  const gs = room.gameState || 'Login';
+  const order = room.playerOrder || [];
+  const players = room.players || {};
+  const meData = players[myPCID];
+  if (!meData) { location.hash = '#lobby'; return; }
+
+  if (gs !== 'Login' && !gs.startsWith('GameEnd')) {
+    if (!confirm('Leave the game? Your spot will be vacant until someone replaces you. The game will be paused.')) return;
+  }
+
+  // Stop listening BEFORE modifying Firebase
   clearListeners();
-  const order = (room.playerOrder || []).filter(p => p !== myPCID);
   const u = {};
-  u['rooms/' + roomId + '/players/' + myPCID] = null;
-  u['rooms/' + roomId + '/playerOrder'] = order;
-  if (room.players[myPCID] && room.players[myPCID].vip && order.length > 0)
-    u['rooms/' + roomId + '/players/' + order[0] + '/vip'] = true;
-  await db.ref().update(u);
+
+  if (gs === 'Login') {
+    // LOGIN: Remove player entirely
+    const newOrder = order.filter(p => p !== myPCID);
+    u['rooms/' + roomId + '/players/' + myPCID] = null;
+    u['rooms/' + roomId + '/playerOrder'] = newOrder;
+
+    // VIP transfer
+    if (meData.vip && newOrder.length > 0) {
+      u['rooms/' + roomId + '/players/' + newOrder[0] + '/vip'] = true;
+    }
+
+    // If last player, delete room
+    if (newOrder.length === 0) {
+      await db.ref('rooms/' + roomId).remove();
+    } else {
+      await db.ref().update(u);
+    }
+  } else {
+    // GAME IN PROGRESS: Mark as vacant, don't remove
+    u[`rooms/${roomId}/players/${myPCID}/vacant`] = true;
+
+    // VIP transfer to next active player
+    if (meData.vip) {
+      const nextVip = findNextActivePcid(order, players, myPCID);
+      if (nextVip) {
+        u[`rooms/${roomId}/players/${myPCID}/vip`] = false;
+        u[`rooms/${roomId}/players/${nextVip}/vip`] = true;
+      }
+    }
+
+    // If president/chancellor was this player, clear their role flag
+    // (game is paused anyway, so this won't cause issues)
+
+    await db.ref().update(u);
+  }
+
   currentRoom = null;
   currentRoomData = null;
   location.hash = '#lobby';
+  toast('You left the room');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -757,7 +933,21 @@ function renderGamePlayer(roomId, room, players, me) {
   if (me.chancellor) html += `<img src="${IMG}Chancellor.png" class="role-img" title="Chancellor">`;
   html += `<strong>${me.name}</strong>`;
   if (me.vip) html += ' <span class="badge badge-vip">VIP</span>';
-  html += `</div><div class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button><button class="btn btn-sm btn-ghost" onclick="backToLobby()">Lobby</button></div></div>`;
+  html += `</div><div class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button><button class="btn btn-sm btn-ghost" onclick="backToLobby()">Lobby</button><button class="btn btn-sm btn-leave" onclick="leaveRoom('${roomId}')">Leave</button></div></div>`;
+
+  const paused = isGamePaused(room, players);
+
+  // Paused banner
+  if (paused) {
+    const vacants = getVacantPlayers(players);
+    html += `<div class="paused-banner"><h3>⏸ Game Paused</h3>
+      <div class="text-dim text-sm mt">Waiting for replacement player${vacants.length > 1 ? 's' : ''}:</div>
+      <div class="flex-col gap-sm mt" style="text-align:left;">`;
+    for (const v of vacants) {
+      html += `<div class="player-row"><div class="name">${v.name}</div><span class="badge badge-vacant">Vacant</span></div>`;
+    }
+    html += '</div></div>';
+  }
 
   // Mini score
   html += miniScoreHtml(room);
@@ -792,9 +982,13 @@ function renderGamePlayer(roomId, room, players, me) {
   if (room.resetVote) html += renderResetVoteBanner(roomId, room, players, me);
 
   // Game action
-  html += '<div class="card flex-col gap-sm" id="gameAction">';
-  html += renderGameAction(roomId, room, players, me, gs);
-  html += '</div>';
+  if (paused) {
+    html += '<div class="card text-center"><div class="text-dim">Game actions are paused until all spots are filled.</div></div>';
+  } else {
+    html += '<div class="card flex-col gap-sm" id="gameAction">';
+    html += renderGameAction(roomId, room, players, me, gs);
+    html += '</div>';
+  }
 
   // Rule tip
   html += ruleTipHtml(gs, room);
@@ -841,12 +1035,13 @@ function renderPlayerHostSummary(room, players) {
   for (const p of players) {
     let badges = '';
     if (p.vip) badges += '<span class="badge badge-vip">VIP</span>';
+    if (p.vacant) badges += '<span class="badge badge-vacant">Vacant</span>';
     if (p.president) badges += '<span class="badge badge-pres">President</span>';
     if (p.chancellor) badges += '<span class="badge badge-chan">Chancellor</span>';
     if (p.inGameStatus === 'Dead') badges += '<span class="badge badge-dead">Dead</span>';
 
     let voteHtml = '';
-    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead') {
+    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead' && !p.vacant) {
       const voted = p.vote && p.vote !== 'null';
       if (allIn && voted) {
         voteHtml = `<span style="font-weight:700;color:${p.vote === 'ja' ? 'var(--liberal)' : 'var(--accent)'}">${p.vote.toUpperCase()}</span>`;
@@ -932,7 +1127,7 @@ function renderGameAction(roomId, room, players, me, gs) {
     if (me.president) {
       html += '<h3 class="text-gold">Choose a Chancellor</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
       for (const p of players) {
-        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead')
+        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead' && !p.vacant)
           html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`;
       }
       html += '</div>';
@@ -949,7 +1144,7 @@ function renderGameAction(roomId, room, players, me, gs) {
     // Player vote status list: show "Voted" or actual vote if all in
     html += '<div class="flex-col gap-sm mt">';
     for (const p of players) {
-      if (p.inGameStatus === 'Dead') continue;
+      if (p.inGameStatus === 'Dead' || p.vacant) continue;
       const voted = p.vote && p.vote !== 'null';
       let vd = '';
       if (allIn && voted) {
@@ -1024,7 +1219,7 @@ function renderGameAction(roomId, room, players, me, gs) {
   else if (gs === 'ChooseExaminPlayer') {
     if (me.president) {
       html += '<h3 class="text-gold">Choose a player to investigate</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
-      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead' && !p.vacant) html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitBtn" onclick="submitExaminPlayer('${roomId}')" disabled>Investigate</button>`;
     } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to investigate...</h3>`; }
@@ -1045,7 +1240,7 @@ function renderGameAction(roomId, room, players, me, gs) {
   else if (gs === 'ChooseKillPlayer') {
     if (me.president) {
       html += '<h3 class="text-red">Choose a player to EXECUTE</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
-      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-danger" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead' && !p.vacant) html += `<button class="btn btn-danger" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-danger btn-full mt" id="submitBtn" onclick="submitKill('${roomId}')" disabled>Execute</button>`;
     } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to execute... 💀</h3>`; }
@@ -1054,7 +1249,7 @@ function renderGameAction(roomId, room, players, me, gs) {
   else if (gs === 'ChoosePresidentPlayer') {
     if (me.president) {
       html += '<h3 class="text-gold">Choose the next President</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
-      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead' && !p.vacant) html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitBtn" onclick="submitChoosePresident('${roomId}')" disabled>Confirm</button>`;
     } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing the next president...</h3>`; }
@@ -1163,13 +1358,14 @@ async function submitVote(roomId) {
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   const players = getPlayerArray(room);
-  let dead = 0, ja = 0, nein = 0;
+  let dead = 0, vacant = 0, ja = 0, nein = 0;
   for (const p of players) {
     if (p.inGameStatus === 'Dead') dead++;
-    if (p.vote === 'ja') ja++;
-    if (p.vote === 'nein') nein++;
+    else if (p.vacant) vacant++;
+    else if (p.vote === 'ja') ja++;
+    else if (p.vote === 'nein') nein++;
   }
-  if (dead + ja + nein === players.length && !_voteProcessing) {
+  if (dead + vacant + ja + nein === players.length && !_voteProcessing) {
     _voteProcessing = true;
     // 2.5s delay so everyone sees revealed votes
     setTimeout(async () => {
@@ -1190,7 +1386,7 @@ async function processVoteResult(roomId, room, players, jaCount, neinCount) {
 
   // Save votes for the results banner
   const rec = { chancellorName: chanName, votes: {}, result: jaCount > neinCount ? 'pass' : 'fail' };
-  for (const p of players) { if (p.inGameStatus !== 'Dead') rec.votes[p.name] = p.vote; }
+  for (const p of players) { if (p.inGameStatus !== 'Dead' && !p.vacant) rec.votes[p.name] = p.vote; }
   u[`rooms/${roomId}/lastVotes`] = rec;
 
   if (jaCount > neinCount) {
@@ -1399,7 +1595,31 @@ async function submitChoosePresident(roomId) {
 // ═══════════════════════════════════════════════════════════════════
 // RESTART / RESET
 // ═══════════════════════════════════════════════════════════════════
-async function restartSamePlayers(roomId) { await startGame(roomId); }
+async function restartSamePlayers(roomId) {
+  // Remove vacant players before restarting
+  const snap = await db.ref('rooms/' + roomId).once('value');
+  const room = snap.val();
+  if (!room) return;
+  const order = room.playerOrder || [];
+  const players = room.players || {};
+  const vacantPcids = order.filter(pcid => players[pcid] && players[pcid].vacant);
+  if (vacantPcids.length > 0) {
+    const u = {};
+    const newOrder = order.filter(pcid => !players[pcid] || !players[pcid].vacant);
+    u[`rooms/${roomId}/playerOrder`] = newOrder;
+    for (const pcid of vacantPcids) {
+      u[`rooms/${roomId}/players/${pcid}`] = null;
+    }
+    // If VIP was vacant, reassign
+    for (const pcid of vacantPcids) {
+      if (players[pcid].vip && newOrder.length > 0) {
+        u[`rooms/${roomId}/players/${newOrder[0]}/vip`] = true;
+      }
+    }
+    await db.ref().update(u);
+  }
+  await startGame(roomId);
+}
 
 async function resetNewPlayers(roomId) {
   const snap = await db.ref('rooms/' + roomId).once('value');
@@ -1456,12 +1676,13 @@ function renderHostScreen(roomId, room) {
   for (const p of players) {
     let badges = '';
     if (p.vip) badges += '<span class="badge badge-vip">VIP</span>';
+    if (p.vacant) badges += '<span class="badge badge-vacant">Vacant</span>';
     if (p.president) badges += '<span class="badge badge-pres">President</span>';
     if (p.chancellor) badges += '<span class="badge badge-chan">Chancellor</span>';
     if (p.inGameStatus === 'Dead') badges += '<span class="badge badge-dead">Dead</span>';
 
     let voteHtml = '';
-    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead') {
+    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead' && !p.vacant) {
       const voted = p.vote && p.vote !== 'null';
       if (allIn && voted) {
         voteHtml = `<span style="font-weight:700;color:${p.vote === 'ja' ? 'var(--liberal)' : 'var(--accent)'}">${p.vote.toUpperCase()}</span>`;
@@ -1519,6 +1740,12 @@ function renderHostScreen(roomId, room) {
       GameEndLIBERAL: 'LIBERALS WIN!', GameEndFASCIST: 'FASCISTS WIN!'
     };
     html += `<h2 class="mt" style="color:${gs.includes('FASCIST') ? 'var(--accent)' : gs.includes('LIBERAL') ? 'var(--liberal)' : 'var(--gold)'}">${stateMsg[gs] || gs}</h2>`;
+
+    // Paused banner on host TV
+    if (isGamePaused(room, players)) {
+      const vacants = getVacantPlayers(players);
+      html += `<div class="paused-banner mt"><h3>⏸ Game Paused</h3><div class="text-dim text-sm">Waiting for ${vacants.length} replacement player${vacants.length > 1 ? 's' : ''}</div></div>`;
+    }
 
     // Rule tip
     html += ruleTipHtml(gs, room);
