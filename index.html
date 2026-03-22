@@ -318,6 +318,15 @@ function genRoomId() {
 
 function clearListeners() { activeListeners.forEach(l => l()); activeListeners = []; }
 
+async function isNameTaken(name, excludePcid) {
+  const snap = await db.ref('players').once('value');
+  const players = snap.val() || {};
+  for (const pcid in players) {
+    if (pcid !== excludePcid && players[pcid].name === name) return true;
+  }
+  return false;
+}
+
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg;
@@ -413,7 +422,6 @@ function showNameEntry(msg) {
       <h2>Secret Hitler</h2>
       <div class="card flex-col gap-lg" style="margin-top:20px;">
         ${msg ? `<div class="text-red text-center">${msg}</div>` : ''}
-        <div class="text-center text-dim text-sm">PCID: ${myPCID}</div>
         <label style="color:var(--text-dim);font-size:.85em;">Choose your display name</label>
         <input type="text" id="nameInput" placeholder="Enter name..." maxlength="20" autofocus>
         <button class="btn btn-primary btn-full" onclick="submitName()">Enter</button>
@@ -427,6 +435,8 @@ async function submitName() {
   const name = (input.value || '').trim().replace(/\s+/g, '');
   if (!name) return toast('Name cannot be blank');
   if (name.toLowerCase() === 'host') return toast('Name cannot be Host');
+  const taken = await isNameTaken(name, myPCID);
+  if (taken) return toast('Name "' + name + '" is already in use');
   await db.ref('players/' + myPCID).set({ name, createdAt: Date.now() });
   myName = name;
   location.hash = '#lobby';
@@ -477,8 +487,7 @@ function showLobby() {
       if (isMy) infoLine += '<span class="rejoin"> · Rejoin</span>';
       if (hasVacancy) infoLine += `<span style="color:orange;font-weight:700;"> · ${vacantCount} spot${vacantCount > 1 ? 's' : ''} open</span>`;
       div.innerHTML = `<div class="room-name">${room.name || id}</div>
-        <div class="room-info">${infoLine}</div>
-        <div class="text-dim text-sm" style="margin-top:2px;">ID: ${id}</div>`;
+        <div class="room-info">${infoLine}</div>`;
       div.onclick = () => { location.hash = '#room/' + id; };
       c.appendChild(div);
     }
@@ -608,6 +617,8 @@ async function doChangeName() {
   const name = (input.value || '').trim().replace(/\s+/g, '');
   if (!name) return toast('Name cannot be blank');
   if (name.toLowerCase() === 'host') return toast('Name cannot be Host');
+  const taken = await isNameTaken(name, myPCID);
+  if (taken) return toast('Name "' + name + '" is already in use');
   await db.ref('players/' + myPCID + '/name').set(name);
   myName = name;
   const snap = await db.ref('rooms').once('value');
@@ -796,7 +807,6 @@ function renderLobbyWait(roomId, room, players, me) {
       <button class="btn btn-ghost btn-sm" onclick="leaveRoom('${roomId}')">Leave</button>
     </div>
     <div class="text-center"><img src="${IMG}Logo.png" style="max-width:200px;width:50%;" onerror="this.style.display='none'"></div>
-    <div class="text-dim text-sm text-center">Room: ${roomId} · Host TV: <a href="#host/${roomId}" style="color:var(--gold);">#host/${roomId}</a></div>
     <div class="text-center text-dim">Waiting for players... (${players.length}/10)</div>`;
   html += '<div class="flex-col gap-sm">';
   for (const p of players) {
@@ -1807,6 +1817,7 @@ function showAdmin() {
     for (const [pcid, d] of Object.entries(pls)) {
       h += `<tr><td class="text-sm">${pcid}${pcid===myPCID?' (You)':''}</td><td>${d.name||'-'}</td>
         <td class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="adminRenamePlayer('${pcid}')">Rename</button>
+        <button class="btn btn-sm btn-gold" onclick="adminChangePcid('${pcid}')">Change PCID</button>
         <button class="btn btn-sm btn-danger" onclick="adminDeletePlayer('${pcid}')">Delete</button></td></tr>`;
     }
     c.innerHTML = h + '</table>';
@@ -1845,6 +1856,41 @@ async function adminDeletePlayer(pcid) {
     if (r.players&&r.players[pcid]) { u[`rooms/${rid}/players/${pcid}`]=null; u[`rooms/${rid}/playerOrder`]=(r.playerOrder||[]).filter(p=>p!==pcid); }
   }
   if (Object.keys(u).length) await db.ref().update(u);
+}
+async function adminChangePcid(oldPcid) {
+  const newPcid = prompt('Enter new PCID for ' + oldPcid + ' (12 uppercase letters):');
+  if (!newPcid) return;
+  const cleaned = newPcid.trim().toUpperCase();
+  if (cleaned.length !== 12 || !/^[A-Z]{12}$/.test(cleaned)) return toast('PCID must be exactly 12 uppercase letters');
+  if (cleaned === oldPcid) return toast('Same PCID — nothing to change');
+
+  // Check if new PCID already exists
+  const existSnap = await db.ref('players/' + cleaned).once('value');
+  if (existSnap.exists()) return toast('PCID ' + cleaned + ' already exists');
+
+  // Copy player data to new PCID
+  const playerSnap = await db.ref('players/' + oldPcid).once('value');
+  if (!playerSnap.exists()) return toast('Player not found');
+  await db.ref('players/' + cleaned).set(playerSnap.val());
+  await db.ref('players/' + oldPcid).remove();
+
+  // Update all rooms: swap old PCID for new in players and playerOrder
+  const roomsSnap = await db.ref('rooms').once('value');
+  const rooms = roomsSnap.val() || {};
+  const u = {};
+  for (const [rid, r] of Object.entries(rooms)) {
+    if (r.players && r.players[oldPcid]) {
+      // Copy player game data to new PCID key
+      u[`rooms/${rid}/players/${cleaned}`] = r.players[oldPcid];
+      // Remove old PCID key
+      u[`rooms/${rid}/players/${oldPcid}`] = null;
+      // Replace in playerOrder
+      const order = (r.playerOrder || []).map(p => p === oldPcid ? cleaned : p);
+      u[`rooms/${rid}/playerOrder`] = order;
+    }
+  }
+  if (Object.keys(u).length) await db.ref().update(u);
+  toast('Changed PCID: ' + oldPcid + ' → ' + cleaned);
 }
 async function adminCreatePcid() {
   const ni = document.getElementById('newPcidName');
