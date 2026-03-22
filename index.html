@@ -961,8 +961,8 @@ function renderGamePlayer(roomId, room, players, me) {
   if (gs === 'GameEndFASCIST' || gs === 'GameEndLIBERAL') {
     html += renderGameEnd(room, players, me);
     html += ruleTipHtml(gs, room);
-    html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
     html += renderPlayerHostSummary(room, players);
+    html += renderBottomControls(roomId, me);
     app.innerHTML = html; restoreHostSummaryState(); return;
   }
 
@@ -970,8 +970,8 @@ function renderGamePlayer(roomId, room, players, me) {
   if (me.inGameStatus === 'Dead') {
     html += '<div class="card text-center"><h2 class="text-red">You are dead...</h2><div class="text-dim text-sm mt">Dead players may not speak, vote, or run for office.</div></div>';
     if (room.resetVote) html += renderResetVoteBanner(roomId, room, players, me);
-    html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
     html += renderPlayerHostSummary(room, players);
+    html += renderBottomControls(roomId, me);
     app.innerHTML = html; restoreHostSummaryState(); return;
   }
 
@@ -993,22 +993,11 @@ function renderGamePlayer(roomId, room, players, me) {
   // Rule tip
   html += ruleTipHtml(gs, room);
 
-  // Host TV link
-  html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
-
-  // VIP controls during game
-  if (me.vip) {
-    html += `<div class="vip-controls"><h3>VIP Controls</h3>
-      <div class="flex flex-wrap gap-sm">
-        <button class="btn btn-primary btn-sm" onclick="vipResetGame('${roomId}','same')">Restart Same Players</button>
-        <button class="btn btn-danger btn-sm" onclick="vipResetGame('${roomId}','new')">Reset New Players</button>
-        <button class="btn btn-gold btn-sm" onclick="vipCallResetVote('${roomId}')">Call Reset Vote</button>
-      </div>
-    </div>`;
-  }
-
   // Host summary at bottom
   html += renderPlayerHostSummary(room, players);
+
+  // Copy link + VIP controls below board
+  html += renderBottomControls(roomId, me);
 
   app.innerHTML = html;
   restoreHostSummaryState();
@@ -1115,6 +1104,20 @@ function restoreHostSummaryState() {
     if (body) body.classList.add('open');
     if (arrow) arrow.classList.add('open');
   }
+}
+
+function renderBottomControls(roomId, me) {
+  let html = `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
+  if (me && me.vip) {
+    html += `<div class="vip-controls"><h3>VIP Controls</h3>
+      <div class="flex flex-wrap gap-sm">
+        <button class="btn btn-primary btn-sm" onclick="vipResetGame('${roomId}','same')">Restart Same Players</button>
+        <button class="btn btn-danger btn-sm" onclick="vipResetGame('${roomId}','new')">Reset New Players</button>
+        <button class="btn btn-gold btn-sm" onclick="vipCallResetVote('${roomId}')">Call Reset Vote</button>
+      </div>
+    </div>`;
+  }
+  return html;
 }
 
 function renderGameAction(roomId, room, players, me, gs) {
