@@ -146,6 +146,17 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 .loader { text-align: center; padding: 40px; color: var(--text-dim); }
 
+.host-summary { border: 1px solid rgba(245,197,24,.2); margin-top: 14px; }
+.host-summary-toggle { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(245,197,24,.06); border: none; border-radius: var(--radius); color: var(--gold); font-family: 'Cinzel', serif; font-size: .95em; font-weight: 700; cursor: pointer; letter-spacing: 1px; }
+.host-summary-toggle:hover { background: rgba(245,197,24,.12); }
+.host-summary-toggle .arrow { transition: transform .2s; font-size: 1.2em; }
+.host-summary-toggle .arrow.open { transform: rotate(180deg); }
+.host-summary-body { display: none; padding: 12px; }
+.host-summary-body.open { display: block; }
+.host-summary .player-row { font-size: .85em; padding: 6px 10px; }
+.host-summary .board-wrapper { max-width: 100%; }
+.host-summary .board-policy-overlay img { height: 36%; }
+
 .host-board { display: flex; gap: 20px; flex-wrap: wrap; }
 .host-players { flex: 1; min-width: 280px; }
 .host-game { flex: 2; min-width: 400px; }
@@ -479,7 +490,7 @@ async function createRoom() {
   const roomId = genRoomId();
   await db.ref('rooms/' + roomId).set({
     name: rName, createdAt: Date.now(), gameState: 'Login',
-    fascistScore: 0, liberalScore: 0, voteRetryCount: 1,
+    fascistScore: 0, liberalScore: 0, voteRetryCount: 0,
     toBeChancellorName: '', gameElement: '', fascistBoardImage: '',
     presidentVeto: false, chancellorVeto: false,
     drawPolicyPile: createDrawPolicyPile(), discardPolicyPile: [],
@@ -591,7 +602,7 @@ async function startGame(roomId) {
   u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
   u[`rooms/${roomId}/fascistScore`] = 0;
   u[`rooms/${roomId}/liberalScore`] = 0;
-  u[`rooms/${roomId}/voteRetryCount`] = 1;
+  u[`rooms/${roomId}/voteRetryCount`] = 0;
   u[`rooms/${roomId}/toBeChancellorName`] = '';
   u[`rooms/${roomId}/gameElement`] = '';
   u[`rooms/${roomId}/fascistBoardImage`] = boardImg;
@@ -640,13 +651,15 @@ function renderGamePlayer(roomId, room, players, me) {
   if (gs === 'GameEndFASCIST' || gs === 'GameEndLIBERAL') {
     html += renderGameEnd(room, players, me);
     html += ruleTipHtml(gs, room);
-    app.innerHTML = html; return;
+    html += renderPlayerHostSummary(room, players);
+    app.innerHTML = html; restoreHostSummaryState(); return;
   }
 
   // Dead
   if (me.inGameStatus === 'Dead') {
     html += '<div class="card text-center"><h2 class="text-red">You are dead...</h2><div class="text-dim text-sm mt">Dead players may not speak, vote, or run for office.</div></div>';
-    app.innerHTML = html; return;
+    html += renderPlayerHostSummary(room, players);
+    app.innerHTML = html; restoreHostSummaryState(); return;
   }
 
   // Last vote results banner (show on non-voting states)
@@ -660,7 +673,113 @@ function renderGamePlayer(roomId, room, players, me) {
   // Rule tip
   html += ruleTipHtml(gs, room);
 
+  // Host summary at bottom
+  html += renderPlayerHostSummary(room, players);
+
   app.innerHTML = html;
+  restoreHostSummaryState();
+}
+
+function renderPlayerHostSummary(room, players) {
+  const gs = room.gameState || 'Login';
+  const fS = room.fascistScore || 0;
+  const lS = room.liberalScore || 0;
+  const pile = room.drawPolicyPile || [];
+  const vr = room.voteRetryCount || 0;
+  const boardImg = room.fascistBoardImage || 'FascistBoard_5';
+  const allIn = allVotesIn(players);
+
+  let html = `<div class="card host-summary">
+    <button class="host-summary-toggle" onclick="toggleHostSummary()">
+      <span>Game Board</span>
+      <span class="arrow" id="hostSummaryArrow">▼</span>
+    </button>
+    <div class="host-summary-body" id="hostSummaryBody">`;
+
+  // Player list with badges and vote status
+  html += '<div class="flex-col gap-sm" style="margin-bottom:10px;">';
+  for (const p of players) {
+    let badges = '';
+    if (p.vip) badges += '<span class="badge badge-vip">VIP</span>';
+    if (p.president) badges += '<span class="badge badge-pres">President</span>';
+    if (p.chancellor) badges += '<span class="badge badge-chan">Chancellor</span>';
+    if (p.inGameStatus === 'Dead') badges += '<span class="badge badge-dead">Dead</span>';
+
+    let voteHtml = '';
+    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead') {
+      const voted = p.vote && p.vote !== 'null';
+      if (allIn && voted) {
+        voteHtml = `<span style="font-weight:700;color:${p.vote === 'ja' ? 'var(--liberal)' : 'var(--accent)'}">${p.vote.toUpperCase()}</span>`;
+      } else if (voted) {
+        voteHtml = '<span class="badge badge-voted">Voted</span>';
+      } else {
+        voteHtml = '<span class="text-dim text-sm">...</span>';
+      }
+    }
+
+    html += `<div class="player-row"><div class="name">${p.name}${p.pcid === myPCID ? ' (You)' : ''}</div><div class="badges">${badges} ${voteHtml}</div></div>`;
+  }
+  html += '</div>';
+
+  // Last vote results
+  if (gs !== 'VoteChancellor' && room.lastVotes) html += voteResultBannerHtml(room);
+
+  // Fascist board
+  html += `<div class="board-wrapper"><img src="${IMG}${boardImg}.png" class="board-bg"><div class="board-policy-overlay">`;
+  const fPos = [{top:'28%',left:'7.5%'},{top:'28%',left:'22.3%'},{top:'28%',left:'37.1%'},{top:'28%',left:'51.9%'},{top:'28%',left:'66.7%'},{top:'28%',left:'81.5%'}];
+  for (let i = 0; i < fS; i++) html += `<img src="${IMG}FASCIST_P.png" style="top:${fPos[i].top};left:${fPos[i].left};">`;
+  html += '</div></div>';
+
+  // Liberal board
+  html += `<div class="board-wrapper"><img src="${IMG}LiberalBoard.png" class="board-bg"><div class="board-policy-overlay">`;
+  const lPos = [{top:'24%',left:'15%'},{top:'24%',left:'30%'},{top:'24%',left:'45%'},{top:'24%',left:'60%'},{top:'24%',left:'75%'}];
+  for (let i = 0; i < lS; i++) html += `<img src="${IMG}LIBERAL_P.png" style="top:${lPos[i].top};left:${lPos[i].left};">`;
+  html += '</div></div>';
+
+  // Vote tracker
+  html += '<div class="text-center text-sm text-dim mt">Election Tracker</div><div class="vote-tracker">';
+  for (let i = 1; i <= 3; i++) {
+    if (i <= vr) html += `<img src="${IMG}VoteTile.png" style="width:20px;height:20px;border-radius:50%;" onerror="this.outerHTML='<div class=\\'vote-tracker-dot active\\'></div>'">`;
+    else html += '<div class="vote-tracker-dot"></div>';
+  }
+  html += '</div>';
+
+  html += `<div class="text-dim text-center text-sm mt">Draw pile: ${pile.length}</div>`;
+
+  // State message
+  const stateMsg = {
+    ChooseChancellor: 'President is choosing Chancellor',
+    VoteChancellor: 'Voting for Chancellor: ' + (room.toBeChancellorName || ''),
+    RemovePolicy: '🔇 Legislative Session',
+    ChoosePolicy: '🔇 Legislative Session',
+    ExaminPolicy: 'President examining policies',
+    ChooseExaminPlayer: 'President investigating',
+    ExaminPlayer: 'President investigating ' + (room.gameElement || ''),
+    ChooseKillPlayer: '💀 Execution',
+    ChoosePresidentPlayer: 'Special Election',
+    GameEndLIBERAL: 'LIBERALS WIN!', GameEndFASCIST: 'FASCISTS WIN!'
+  };
+  html += `<div class="text-center mt" style="color:var(--gold);font-weight:700;">${stateMsg[gs] || gs}</div>`;
+
+  html += '</div></div>';
+  return html;
+}
+
+let _hostSummaryOpen = false;
+function toggleHostSummary() {
+  _hostSummaryOpen = !_hostSummaryOpen;
+  const body = document.getElementById('hostSummaryBody');
+  const arrow = document.getElementById('hostSummaryArrow');
+  if (body) body.classList.toggle('open', _hostSummaryOpen);
+  if (arrow) arrow.classList.toggle('open', _hostSummaryOpen);
+}
+function restoreHostSummaryState() {
+  if (_hostSummaryOpen) {
+    const body = document.getElementById('hostSummaryBody');
+    const arrow = document.getElementById('hostSummaryArrow');
+    if (body) body.classList.add('open');
+    if (arrow) arrow.classList.add('open');
+  }
 }
 
 function renderGameAction(roomId, room, players, me, gs) {
@@ -926,7 +1045,7 @@ async function processVoteResult(roomId, room, players, jaCount, neinCount) {
   let pile = [...(room.drawPolicyPile || [])];
   let discard = [...(room.discardPolicyPile || [])];
   let fS = room.fascistScore || 0, lS = room.liberalScore || 0;
-  let vr = room.voteRetryCount || 1;
+  let vr = room.voteRetryCount || 0;
   const chanName = room.toBeChancellorName;
 
   // Save votes for the results banner
@@ -947,7 +1066,7 @@ async function processVoteResult(roomId, room, players, jaCount, neinCount) {
   } else {
     vr++;
     let nextState = 'ChooseChancellor';
-    if (vr > 3) {
+    if (vr >= 3) {
       vr = 0;
       if (pile.length > 0) {
         const top = pile.pop(); discard.push(top);
@@ -1149,7 +1268,7 @@ async function resetNewPlayers(roomId) {
   const u = {};
   // Reset room-level game state
   u[`rooms/${roomId}/gameState`] = 'Login'; u[`rooms/${roomId}/fascistScore`] = 0; u[`rooms/${roomId}/liberalScore`] = 0;
-  u[`rooms/${roomId}/voteRetryCount`] = 1; u[`rooms/${roomId}/toBeChancellorName`] = ''; u[`rooms/${roomId}/gameElement`] = '';
+  u[`rooms/${roomId}/voteRetryCount`] = 0; u[`rooms/${roomId}/toBeChancellorName`] = ''; u[`rooms/${roomId}/gameElement`] = '';
   u[`rooms/${roomId}/presidentVeto`] = false; u[`rooms/${roomId}/chancellorVeto`] = false;
   u[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile(); u[`rooms/${roomId}/discardPolicyPile`] = [];
   u[`rooms/${roomId}/lastVotes`] = null;
@@ -1330,7 +1449,7 @@ async function adminResetRoom(id) {
   if (!confirm('Reset room '+id+'?')) return;
   const u = {};
   u[`rooms/${id}/gameState`]='Login'; u[`rooms/${id}/fascistScore`]=0; u[`rooms/${id}/liberalScore`]=0;
-  u[`rooms/${id}/voteRetryCount`]=1; u[`rooms/${id}/toBeChancellorName`]=''; u[`rooms/${id}/gameElement`]='';
+  u[`rooms/${id}/voteRetryCount`]=0; u[`rooms/${id}/toBeChancellorName`]=''; u[`rooms/${id}/gameElement`]='';
   u[`rooms/${id}/presidentVeto`]=false; u[`rooms/${id}/chancellorVeto`]=false;
   u[`rooms/${id}/drawPolicyPile`]=createDrawPolicyPile(); u[`rooms/${id}/discardPolicyPile`]=[];
   u[`rooms/${id}/playerOrder`]=[]; u[`rooms/${id}/players`]=null; u[`rooms/${id}/lastVotes`]=null;
