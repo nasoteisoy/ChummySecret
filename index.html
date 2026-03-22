@@ -157,6 +157,16 @@ input[type="text"]:focus { border-color: var(--accent); }
 .host-summary .board-wrapper { max-width: 100%; }
 .host-summary .board-policy-overlay img { height: 36%; }
 
+.vip-controls { background: rgba(245,197,24,.06); border: 1px solid rgba(245,197,24,.2); border-radius: var(--radius); padding: 12px; margin-top: 12px; }
+.vip-controls h3 { color: var(--gold); font-size: .85em; margin-bottom: 8px; }
+
+.copy-link-btn { cursor: pointer; background: rgba(255,255,255,.06); border: 1px dashed var(--text-dim); border-radius: 8px; padding: 8px 12px; color: var(--text-dim); font-size: .8em; text-align: center; transition: border-color .15s, color .15s; }
+.copy-link-btn:hover { border-color: var(--gold); color: var(--gold); }
+.copy-link-btn.copied { border-color: var(--green); color: var(--green); }
+
+.reset-vote-banner { background: rgba(233,69,96,.1); border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px; text-align: center; margin-top: 10px; }
+.reset-vote-banner h3 { color: var(--accent); }
+
 .host-board { display: flex; gap: 20px; flex-wrap: wrap; }
 .host-players { flex: 1; min-width: 280px; }
 .host-game { flex: 2; min-width: 400px; }
@@ -455,6 +465,104 @@ function backToLobby() {
   location.hash = '#lobby';
 }
 
+function copyHostLink(roomId) {
+  const url = location.origin + location.pathname + '#host/' + roomId;
+  navigator.clipboard.writeText(url).then(() => {
+    const el = document.querySelector('.copy-link-btn');
+    if (el) { el.textContent = '✓ Copied!'; el.classList.add('copied'); setTimeout(() => { el.textContent = '📺 Copy Host TV Link'; el.classList.remove('copied'); }, 2000); }
+  }).catch(() => {
+    // Fallback for no clipboard API
+    prompt('Copy this Host TV link:', url);
+  });
+}
+
+async function vipDeleteRoom(roomId) {
+  if (!confirm('Delete this room? All players will be removed. This cannot be undone.')) return;
+  clearListeners();
+  await db.ref('rooms/' + roomId).remove();
+  currentRoom = null;
+  currentRoomData = null;
+  location.hash = '#lobby';
+  toast('Room deleted');
+}
+
+async function vipResetGame(roomId, mode) {
+  if (mode === 'same') {
+    if (!confirm('Reset and restart with the same players?')) return;
+    await startGame(roomId);
+  } else {
+    if (!confirm('Reset game back to lobby? Players stay in the room.')) return;
+    await resetNewPlayers(roomId);
+  }
+}
+
+async function vipCallResetVote(roomId) {
+  if (!confirm('Call a vote to reset the game? All players will vote.')) return;
+  await db.ref(`rooms/${roomId}/resetVote`).set({
+    calledBy: myName,
+    votes: { [myPCID]: 'ja' },
+    calledAt: Date.now()
+  });
+}
+
+async function submitResetVote(roomId, vote) {
+  buzz();
+  await db.ref(`rooms/${roomId}/resetVote/votes/${myPCID}`).set(vote);
+
+  // Check if all living players have voted
+  const snap = await db.ref('rooms/' + roomId).once('value');
+  const room = snap.val();
+  if (!room || !room.resetVote || !room.resetVote.votes) return;
+
+  const players = getPlayerArray(room);
+  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead');
+  const votes = room.resetVote.votes;
+  let ja = 0, nein = 0, total = 0;
+  for (const p of livingPlayers) {
+    if (votes[p.pcid]) {
+      total++;
+      if (votes[p.pcid] === 'ja') ja++;
+      else nein++;
+    }
+  }
+
+  if (total === livingPlayers.length) {
+    // All voted — resolve
+    if (ja > nein) {
+      await db.ref(`rooms/${roomId}/resetVote`).remove();
+      await resetNewPlayers(roomId);
+      toast('Vote passed — game reset');
+    } else {
+      await db.ref(`rooms/${roomId}/resetVote`).remove();
+      toast('Vote failed — game continues');
+    }
+  }
+}
+
+function renderResetVoteBanner(roomId, room, players, me) {
+  const rv = room.resetVote;
+  if (!rv || !rv.votes) return '';
+  const livingPlayers = players.filter(p => p.inGameStatus !== 'Dead');
+  const myVote = rv.votes[myPCID];
+  const totalVoted = Object.keys(rv.votes).length;
+
+  let html = `<div class="reset-vote-banner">
+    <h3>Reset Vote called by ${rv.calledBy}</h3>
+    <div class="text-sm text-dim mt" style="margin-top:4px;">${totalVoted}/${livingPlayers.length} voted</div>`;
+
+  if (!myVote) {
+    html += `<div class="flex flex-center gap-sm mt">
+      <button class="btn btn-green btn-sm" onclick="submitResetVote('${roomId}','ja')">Yes, Reset</button>
+      <button class="btn btn-danger btn-sm" onclick="submitResetVote('${roomId}','nein')">No, Continue</button>
+    </div>`;
+  } else {
+    html += `<div class="text-dim text-sm mt">You voted ${myVote === 'ja' ? 'Yes' : 'No'}. Waiting for others...</div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function showChangeName() {
   const card = document.createElement('div');
   card.className = 'card flex-col gap-sm';
@@ -564,7 +672,14 @@ function renderLobbyWait(roomId, room, players, me) {
   if (me.vip && players.length >= 5) html += `<button class="btn btn-primary btn-full mt" onclick="startGame('${roomId}')">Start Game (${players.length} players)</button>`;
   else if (me.vip) html += `<div class="text-center text-dim mt">Need at least 5 players to start (have ${players.length})</div>`;
   else html += `<div class="text-center text-dim mt">Waiting for VIP to start...</div>`;
-  html += `<button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn" style="align-self:center;margin-top:8px;">${audioMuted ? '🔇 Unmute' : '🔊 Mute'}</button>`;
+  html += `<div class="flex gap-sm" style="justify-content:center;margin-top:10px;">
+    <button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇 Unmute' : '🔊 Mute'}</button>
+    <div class="copy-link-btn" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>
+  </div>`;
+  if (me.vip) {
+    html += `<div class="vip-controls mt"><h3>VIP Controls</h3>
+      <button class="btn btn-danger btn-sm btn-full" onclick="vipDeleteRoom('${roomId}')">Delete Room</button></div>`;
+  }
   app.innerHTML = html;
 }
 
@@ -573,6 +688,8 @@ async function leaveRoom(roomId) {
   if (!snap.exists()) { location.hash = '#lobby'; return; }
   const room = snap.val();
   if (room.gameState !== 'Login') { toast("Can't leave during a game"); return; }
+  // Stop listening BEFORE removing player, otherwise the listener re-adds us
+  clearListeners();
   const order = (room.playerOrder || []).filter(p => p !== myPCID);
   const u = {};
   u['rooms/' + roomId + '/players/' + myPCID] = null;
@@ -580,6 +697,8 @@ async function leaveRoom(roomId) {
   if (room.players[myPCID] && room.players[myPCID].vip && order.length > 0)
     u['rooms/' + roomId + '/players/' + order[0] + '/vip'] = true;
   await db.ref().update(u);
+  currentRoom = null;
+  currentRoomData = null;
   location.hash = '#lobby';
 }
 
@@ -611,6 +730,7 @@ async function startGame(roomId) {
   u[`rooms/${roomId}/drawPolicyPile`] = pile;
   u[`rooms/${roomId}/discardPolicyPile`] = [];
   u[`rooms/${roomId}/lastVotes`] = null;
+  u[`rooms/${roomId}/resetVote`] = null;
 
   for (let i = 0; i < order.length; i++) {
     const pcid = order[i];
@@ -651,6 +771,7 @@ function renderGamePlayer(roomId, room, players, me) {
   if (gs === 'GameEndFASCIST' || gs === 'GameEndLIBERAL') {
     html += renderGameEnd(room, players, me);
     html += ruleTipHtml(gs, room);
+    html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
     html += renderPlayerHostSummary(room, players);
     app.innerHTML = html; restoreHostSummaryState(); return;
   }
@@ -658,12 +779,17 @@ function renderGamePlayer(roomId, room, players, me) {
   // Dead
   if (me.inGameStatus === 'Dead') {
     html += '<div class="card text-center"><h2 class="text-red">You are dead...</h2><div class="text-dim text-sm mt">Dead players may not speak, vote, or run for office.</div></div>';
+    if (room.resetVote) html += renderResetVoteBanner(roomId, room, players, me);
+    html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
     html += renderPlayerHostSummary(room, players);
     app.innerHTML = html; restoreHostSummaryState(); return;
   }
 
   // Last vote results banner (show on non-voting states)
   if (gs !== 'VoteChancellor' && room.lastVotes) html += voteResultBannerHtml(room);
+
+  // Reset vote banner (if active)
+  if (room.resetVote) html += renderResetVoteBanner(roomId, room, players, me);
 
   // Game action
   html += '<div class="card flex-col gap-sm" id="gameAction">';
@@ -672,6 +798,20 @@ function renderGamePlayer(roomId, room, players, me) {
 
   // Rule tip
   html += ruleTipHtml(gs, room);
+
+  // Host TV link
+  html += `<div class="copy-link-btn mt" onclick="copyHostLink('${roomId}')">📺 Copy Host TV Link</div>`;
+
+  // VIP controls during game
+  if (me.vip) {
+    html += `<div class="vip-controls"><h3>VIP Controls</h3>
+      <div class="flex flex-wrap gap-sm">
+        <button class="btn btn-primary btn-sm" onclick="vipResetGame('${roomId}','same')">Restart Same Players</button>
+        <button class="btn btn-danger btn-sm" onclick="vipResetGame('${roomId}','new')">Reset New Players</button>
+        <button class="btn btn-gold btn-sm" onclick="vipCallResetVote('${roomId}')">Call Reset Vote</button>
+      </div>
+    </div>`;
+  }
 
   // Host summary at bottom
   html += renderPlayerHostSummary(room, players);
@@ -1272,6 +1412,7 @@ async function resetNewPlayers(roomId) {
   u[`rooms/${roomId}/presidentVeto`] = false; u[`rooms/${roomId}/chancellorVeto`] = false;
   u[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile(); u[`rooms/${roomId}/discardPolicyPile`] = [];
   u[`rooms/${roomId}/lastVotes`] = null;
+  u[`rooms/${roomId}/resetVote`] = null;
   // Keep players in room but reset their game properties; preserve VIP
   for (const pcid of order) {
     if (room.players && room.players[pcid]) {
@@ -1452,7 +1593,7 @@ async function adminResetRoom(id) {
   u[`rooms/${id}/voteRetryCount`]=0; u[`rooms/${id}/toBeChancellorName`]=''; u[`rooms/${id}/gameElement`]='';
   u[`rooms/${id}/presidentVeto`]=false; u[`rooms/${id}/chancellorVeto`]=false;
   u[`rooms/${id}/drawPolicyPile`]=createDrawPolicyPile(); u[`rooms/${id}/discardPolicyPile`]=[];
-  u[`rooms/${id}/playerOrder`]=[]; u[`rooms/${id}/players`]=null; u[`rooms/${id}/lastVotes`]=null;
+  u[`rooms/${id}/playerOrder`]=[]; u[`rooms/${id}/players`]=null; u[`rooms/${id}/lastVotes`]=null; u[`rooms/${id}/resetVote`]=null;
   await db.ref().update(u);
 }
 async function adminRenamePlayer(pcid) {
