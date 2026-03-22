@@ -52,8 +52,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { box-shadow: 0 0 20px rgba(233,69,96,.4); }
 .btn-secondary { background: var(--accent2); color: #fff; }
-.btn-liberal { background: var(--liberal); color: #fff; }
-.btn-fascist { background: var(--fascist); color: #fff; }
 .btn-gold { background: var(--gold); color: #111; }
 .btn-green { background: var(--green); color: #fff; }
 .btn-danger { background: #c0392b; color: #fff; }
@@ -87,6 +85,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 .badge-fascist { background: var(--fascist); color: #fff; }
 .badge-liberal { background: var(--liberal); color: #fff; }
 .badge-hitler { background: #111; color: var(--accent); border: 1px solid var(--accent); }
+.badge-voted { background: var(--green); color: #fff; }
 
 .player-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: rgba(0,0,0,.2); }
 .player-row .name { font-weight: 700; flex: 1; }
@@ -109,13 +108,34 @@ input[type="text"]:focus { border-color: var(--accent); }
 .vote-img:hover { transform: scale(1.05); }
 .vote-img.selected { border-color: var(--gold); box-shadow: 0 0 16px rgba(245,197,24,.5); }
 
-.board-container { position: relative; width: 100%; overflow-x: auto; }
-.board-container img.board-bg { width: 100%; display: block; }
+.role-img { height: 40px; width: auto; vertical-align: middle; }
 
 .score-bar { display: flex; gap: 4px; align-items: center; }
 .score-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-size: .7em; font-weight: 700; }
 .score-dot.filled-f { background: var(--fascist); border-color: var(--fascist); }
 .score-dot.filled-l { background: var(--liberal); border-color: var(--liberal); }
+
+.rule-tip { background: rgba(245,197,24,.08); border-left: 3px solid var(--gold); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: .82em; color: var(--text-dim); line-height: 1.5; margin-top: 10px; }
+.rule-tip strong { color: var(--gold); }
+.rule-tip .silence { color: var(--accent); font-weight: 700; font-size: 1.05em; }
+
+.vote-result-banner { background: rgba(0,0,0,.3); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+.vote-result-banner .vr-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.vr-ja { color: var(--liberal); font-weight: 700; }
+.vr-nein { color: var(--accent); font-weight: 700; }
+
+.board-wrapper { position: relative; width: 100%; max-width: 700px; margin: 8px auto; }
+.board-wrapper img.board-bg { width: 100%; display: block; border-radius: 8px; }
+.board-policy-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.board-policy-overlay img { position: absolute; height: 38%; }
+
+.vote-tracker { display: flex; gap: 6px; justify-content: center; margin-top: 6px; }
+.vote-tracker-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--gold); }
+.vote-tracker-dot.active { background: var(--gold); }
+
+.mini-score { display: flex; gap: 12px; justify-content: center; align-items: center; padding: 8px; font-size: .85em; }
+.mini-score .ms-f { color: var(--fascist); font-weight: 700; }
+.mini-score .ms-l { color: var(--liberal); font-weight: 700; }
 
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.1); }
@@ -126,7 +146,6 @@ input[type="text"]:focus { border-color: var(--accent); }
 
 .loader { text-align: center; padding: 40px; color: var(--text-dim); }
 
-/* Host/TV mode */
 .host-board { display: flex; gap: 20px; flex-wrap: wrap; }
 .host-players { flex: 1; min-width: 280px; }
 .host-game { flex: 2; min-width: 400px; }
@@ -138,6 +157,7 @@ input[type="text"]:focus { border-color: var(--accent); }
   .vote-img { width: 70px; }
   .btn { padding: 10px 16px; font-size: .85em; }
   .score-dot { width: 22px; height: 22px; font-size: .6em; }
+  .role-img { height: 30px; }
 }
 </style>
 </head>
@@ -148,7 +168,7 @@ input[type="text"]:focus { border-color: var(--accent); }
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// FIREBASE + PCID INIT
+// FIREBASE + PCID
 // ═══════════════════════════════════════════════════════════════════
 firebase.initializeApp({
   apiKey: "AIzaSyDVbt_8GuRuHJRPAN7jFXbs_lJUfUHNxHE",
@@ -186,20 +206,52 @@ function playAudio(name) {
   if (audioMuted) return;
   try { new Audio(AUD + name + '.m4a').play(); } catch(e){}
 }
-function buzz() {
-  if (navigator.vibrate) navigator.vibrate(100);
-}
+function buzz() { if (navigator.vibrate) navigator.vibrate(100); }
 
 // ═══════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════
 let myName = '';
-let currentRoom = null; // roomId
+let currentRoom = null;
 let currentRoomData = null;
 let activeListeners = [];
 let isAdmin = false;
 let isHostView = false;
 let hostViewRoomId = null;
+let _voteProcessing = false; // guard against double-processing
+
+// ═══════════════════════════════════════════════════════════════════
+// RULE TIPS (from official Secret Hitler rules)
+// ═══════════════════════════════════════════════════════════════════
+const RULES = {
+  ChooseChancellor: `<strong>Election:</strong> The President nominates a Chancellor. The last elected President and Chancellor are <em>term-limited</em> and ineligible for Chancellor. Discuss freely to build consensus!`,
+  ChooseChancellorHitler: `<strong>⚠ 3+ Fascist policies enacted!</strong> If Hitler is elected Chancellor, Fascists win immediately. Choose wisely.`,
+  VoteChancellor: `<strong>Vote Ja! or Nein!</strong> on the proposed government. Majority Ja! elects them; a tie or majority Nein! fails the election. <strong>3 failed elections in a row</strong> → the top policy is automatically enacted (no presidential power activates).`,
+  VoteChancellorHitler: `<strong>⚠ Reminder:</strong> 3+ Fascist policies are enacted. If this Chancellor is Hitler and gets elected, Fascists win!`,
+  RemovePolicy: `<span class="silence">🔇 LEGISLATIVE SESSION — SILENCE!</span><br>Verbal and nonverbal communication between President and Chancellor is <strong>forbidden</strong>. President: look at 3 policy tiles in secret, discard 1, pass 2 to the Chancellor. Do NOT pick randomly or shuffle — you must deliberately choose. Discarded tiles are never revealed.`,
+  ChoosePolicy: `<span class="silence">🔇 LEGISLATIVE SESSION — SILENCE!</span><br>Chancellor: look at 2 policy tiles in secret, discard 1, enact the other. <strong>No communication with the President until the policy is played.</strong> Afterward, you are free to share or <em>lie</em> about what you received.`,
+  ChoosePolicyVeto: `<span class="silence">🔇 VETO POWER ACTIVE!</span><br>The Chancellor may propose a veto instead of enacting a policy. If the President agrees, all tiles are discarded and the election tracker advances. Both may lie about why they vetoed.`,
+  ExaminPolicy: `<strong>Executive Power — Policy Peek:</strong> The President secretly examines the top 3 policy tiles without changing their order. <strong>You may lie about what you saw.</strong>`,
+  ChooseExaminPlayer: `<strong>Executive Power — Investigate Loyalty:</strong> Choose a player to investigate. You will see their party membership (Liberal or Fascist — note: Hitler appears as Fascist). <strong>You may lie about the result.</strong> No player may be investigated twice.`,
+  ExaminPlayer: `<strong>Investigating…</strong> Only you can see this player's party membership. You may share the result truthfully or lie to the table.`,
+  ChooseKillPlayer: `<strong>Executive Power — Execution:</strong> The President formally executes one player. If they are Hitler, <strong>Liberals win!</strong> Otherwise, the table will NOT learn if the executed player was Fascist or Liberal — you must work that out yourselves. Dead players may not speak, vote, or run for office.`,
+  ChoosePresidentPlayer: `<strong>Executive Power — Special Election:</strong> Choose any living player to be the next Presidential Candidate. They choose a Chancellor and the election proceeds normally. Afterward, the presidency returns to normal clockwise rotation.`,
+  GameEndLIBERAL: `<strong>Game Over!</strong> The Liberals have saved democracy — either by enacting 5 Liberal policies or by assassinating Hitler.`,
+  GameEndFASCIST: `<strong>Game Over!</strong> The Fascists have seized control — either by enacting 6 Fascist policies or by getting Hitler elected Chancellor.`
+};
+
+function getRuleTip(gs, room) {
+  const f = room ? (room.fascistScore || 0) : 0;
+  if (gs === 'ChooseChancellor') return RULES.ChooseChancellor + (f >= 3 ? '<br><br>' + RULES.ChooseChancellorHitler : '');
+  if (gs === 'VoteChancellor') return RULES.VoteChancellor + (f >= 3 ? '<br><br>' + RULES.VoteChancellorHitler : '');
+  if (gs === 'ChoosePolicy') return (room && room.gameElement === 'VETO') ? RULES.ChoosePolicyVeto : RULES.ChoosePolicy;
+  return RULES[gs] || '';
+}
+
+function ruleTipHtml(gs, room) {
+  const tip = getRuleTip(gs, room);
+  return tip ? `<div class="rule-tip">${tip}</div>` : '';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // UTILITIES
@@ -214,10 +266,10 @@ function shuffle(arr) {
 }
 
 function createDrawPolicyPile() {
-  let pile = [];
-  for (let i = 0; i < 11; i++) pile.push('FASCIST');
-  for (let i = 0; i < 6; i++) pile.push('LIBERAL');
-  return shuffle(shuffle(pile));
+  let p = [];
+  for (let i = 0; i < 11; i++) p.push('FASCIST');
+  for (let i = 0; i < 6; i++) p.push('LIBERAL');
+  return shuffle(shuffle(p));
 }
 
 function identityList(count) {
@@ -234,43 +286,56 @@ function genRoomId() {
   return Array.from({ length: 6 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 36)]).join('');
 }
 
-function clearListeners() {
-  activeListeners.forEach(l => l());
-  activeListeners = [];
-}
+function clearListeners() { activeListeners.forEach(l => l()); activeListeners = []; }
 
 function toast(msg) {
   const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
+  t.className = 'toast'; t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2500);
 }
 
-function getPlayerArray(roomData) {
-  if (!roomData || !roomData.players) return [];
-  const order = roomData.playerOrder || [];
-  const players = roomData.players;
-  // sort by order array
+function getPlayerArray(rd) {
+  if (!rd || !rd.players) return [];
+  const order = rd.playerOrder || [];
+  const pl = rd.players;
   let arr = [];
-  for (const pcid of order) {
-    if (players[pcid]) arr.push({ ...players[pcid], pcid });
-  }
-  // add any not in order
-  for (const pcid in players) {
-    if (!order.includes(pcid)) arr.push({ ...players[pcid], pcid });
-  }
+  for (const pcid of order) { if (pl[pcid]) arr.push({ ...pl[pcid], pcid }); }
+  for (const pcid in pl) { if (!order.includes(pcid)) arr.push({ ...pl[pcid], pcid }); }
   return arr;
 }
 
-function getMe(roomData) {
-  if (!roomData || !roomData.players) return null;
-  return roomData.players[myPCID] || null;
+function getMe(rd) { return (rd && rd.players) ? rd.players[myPCID] || null : null; }
+function getPresident(a) { return a.find(p => p.president) || null; }
+function getChancellor(a) { return a.find(p => p.chancellor) || null; }
+
+function allVotesIn(players) {
+  for (const p of players) {
+    if (p.inGameStatus !== 'Dead' && (!p.vote || p.vote === 'null')) return false;
+  }
+  return true;
 }
 
-function getPresident(arr) { return arr.find(p => p.president) || null; }
-function getChancellor(arr) { return arr.find(p => p.chancellor) || null; }
-function getVIP(arr) { return arr.find(p => p.vip) || null; }
+function miniScoreHtml(room) {
+  const f = room.fascistScore || 0, l = room.liberalScore || 0, pile = room.drawPolicyPile || [];
+  return `<div class="mini-score">
+    <span class="ms-f">Fascist ${f}/6</span><span class="text-dim">·</span>
+    <span class="ms-l">Liberal ${l}/5</span><span class="text-dim">·</span>
+    <span class="text-dim">Draw: ${pile.length}</span>
+  </div>`;
+}
+
+function voteResultBannerHtml(room) {
+  const lv = room.lastVotes;
+  if (!lv || !lv.votes) return '';
+  let html = `<div class="vote-result-banner">
+    <div class="text-sm text-dim mb" style="margin-bottom:6px">Last vote — <strong>${lv.chancellorName || '?'}</strong> for Chancellor: <strong class="${lv.result === 'pass' ? 'text-green' : 'text-red'}">${lv.result === 'pass' ? 'PASSED' : 'FAILED'}</strong></div>`;
+  for (const name in lv.votes) {
+    const v = lv.votes[name];
+    html += `<div class="vr-row"><span>${name}</span><span class="${v === 'ja' ? 'vr-ja' : 'vr-nein'}">${v.toUpperCase()}</span></div>`;
+  }
+  return html + '</div>';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ROUTING
@@ -278,45 +343,15 @@ function getVIP(arr) { return arr.find(p => p.vip) || null; }
 function route() {
   clearListeners();
   const hash = location.hash.replace('#', '');
-
-  if (hash === 'admin') {
-    isAdmin = true;
-    isHostView = false;
-    app.className = 'admin-mode';
-    showAdmin();
-    return;
-  }
-
-  if (hash.startsWith('host/')) {
-    isHostView = true;
-    isAdmin = false;
-    hostViewRoomId = hash.split('/')[1];
-    app.className = 'host-mode';
-    showHostView();
-    return;
-  }
-
-  isAdmin = false;
-  isHostView = false;
-  app.className = '';
-
-  // check if player has a name
+  if (hash === 'admin') { isAdmin = true; isHostView = false; app.className = 'admin-mode'; showAdmin(); return; }
+  if (hash.startsWith('host/')) { isHostView = true; isAdmin = false; hostViewRoomId = hash.split('/')[1]; app.className = 'host-mode'; showHostView(); return; }
+  isAdmin = false; isHostView = false; app.className = '';
   db.ref('players/' + myPCID).once('value').then(snap => {
-    const data = snap.val();
-    if (!data || !data.name) {
-      showNameEntry();
-    } else {
-      myName = data.name;
-      if (hash.startsWith('room/')) {
-        currentRoom = hash.split('/')[1];
-        enterRoom(currentRoom);
-      } else {
-        showLobby();
-      }
-    }
+    const d = snap.val();
+    if (!d || !d.name) { showNameEntry(); }
+    else { myName = d.name; if (hash.startsWith('room/')) { currentRoom = hash.split('/')[1]; enterRoom(currentRoom); } else showLobby(); }
   });
 }
-
 window.addEventListener('hashchange', route);
 
 // ═══════════════════════════════════════════════════════════════════
@@ -325,6 +360,7 @@ window.addEventListener('hashchange', route);
 function showNameEntry(msg) {
   app.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;">
+      <div class="text-center"><img src="${IMG}Logo.png" style="max-width:220px;width:60%;" onerror="this.style.display='none'"></div>
       <h1>Chummy Games</h1>
       <h2>Secret Hitler</h2>
       <div class="card flex-col gap-lg" style="margin-top:20px;">
@@ -343,7 +379,6 @@ async function submitName() {
   const name = (input.value || '').trim().replace(/\s+/g, '');
   if (!name) return toast('Name cannot be blank');
   if (name.toLowerCase() === 'host') return toast('Name cannot be Host');
-
   await db.ref('players/' + myPCID).set({ name, createdAt: Date.now() });
   myName = name;
   location.hash = '#lobby';
@@ -355,6 +390,7 @@ async function submitName() {
 function showLobby() {
   currentRoom = null;
   app.innerHTML = `
+    <div class="text-center"><img src="${IMG}Logo.png" style="max-width:180px;width:50%;" onerror="this.style.display='none'"></div>
     <h1>Chummy Games</h1>
     <div class="flex" style="justify-content:space-between;align-items:center;">
       <div>
@@ -369,72 +405,42 @@ function showLobby() {
       <button class="btn btn-primary" onclick="createRoom()">Create Room</button>
     </div>
     <h3 style="margin-top:8px;">Available Rooms</h3>
-    <div id="roomList" class="loader">Loading rooms...</div>
-  `;
+    <div id="roomList" class="loader">Loading rooms...</div>`;
 
   const ref = db.ref('rooms');
   const cb = ref.on('value', snap => {
     const rooms = snap.val() || {};
-    const container = document.getElementById('roomList');
-    if (!container) return;
-
-    const roomEntries = Object.entries(rooms).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
-
-    if (roomEntries.length === 0) {
-      container.innerHTML = '<div class="text-dim text-center" style="padding:20px;">No rooms yet. Create one!</div>';
-      return;
-    }
-
-    container.innerHTML = '';
-    for (const [id, room] of roomEntries) {
-      const players = room.players ? Object.keys(room.players) : [];
-      const count = players.length;
+    const c = document.getElementById('roomList');
+    if (!c) return;
+    const entries = Object.entries(rooms).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    if (!entries.length) { c.innerHTML = '<div class="text-dim text-center" style="padding:20px;">No rooms yet. Create one!</div>'; return; }
+    c.innerHTML = '';
+    for (const [id, room] of entries) {
+      const pls = room.players ? Object.keys(room.players) : [];
       const gs = room.gameState || 'Login';
-      const isMyRoom = players.includes(myPCID);
-      const started = gs !== 'Login';
-
-      // Show room if: not started OR I'm in it
-      if (started && !isMyRoom) continue;
-
+      const isMy = pls.includes(myPCID);
+      if (gs !== 'Login' && !isMy) continue;
       const div = document.createElement('div');
       div.className = 'card room-card';
-      div.innerHTML = `
-        <div class="room-name">${room.name || id}</div>
-        <div class="room-info">
-          ${count} player${count !== 1 ? 's' : ''} · ${started ? 'In Progress' : 'Waiting'}
-          ${isMyRoom ? '<span class="rejoin"> · Rejoin</span>' : ''}
-        </div>
+      div.innerHTML = `<div class="room-name">${room.name || id}</div>
+        <div class="room-info">${pls.length} player${pls.length !== 1 ? 's' : ''} · ${gs !== 'Login' ? 'In Progress' : 'Waiting'}${isMy ? '<span class="rejoin"> · Rejoin</span>' : ''}</div>
         <div class="text-dim text-sm" style="margin-top:2px;">ID: ${id}</div>`;
       div.onclick = () => { location.hash = '#room/' + id; };
-      container.appendChild(div);
+      c.appendChild(div);
     }
   });
   activeListeners.push(() => ref.off('value', cb));
 }
 
-function toggleMute() {
-  audioMuted = !audioMuted;
-  const btn = document.getElementById('muteBtn');
-  if (btn) btn.textContent = audioMuted ? '🔇' : '🔊';
-}
+function toggleMute() { audioMuted = !audioMuted; const b = document.getElementById('muteBtn'); if (b) b.textContent = audioMuted ? '🔇' : '🔊'; }
 
 function showChangeName() {
   const card = document.createElement('div');
   card.className = 'card flex-col gap-sm';
-  card.style.position = 'fixed';
-  card.style.top = '50%';
-  card.style.left = '50%';
-  card.style.transform = 'translate(-50%,-50%)';
-  card.style.zIndex = '1000';
-  card.style.minWidth = '280px';
-  card.style.boxShadow = '0 0 40px rgba(0,0,0,.8)';
-  card.innerHTML = `
-    <h3>Change Name</h3>
-    <input type="text" id="changeNameInput" value="${myName}" maxlength="20">
-    <div class="flex gap-sm">
-      <button class="btn btn-primary btn-sm" onclick="doChangeName()">Save</button>
-      <button class="btn btn-ghost btn-sm" onclick="this.closest('.card').remove()">Cancel</button>
-    </div>`;
+  card.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;min-width:280px;box-shadow:0 0 40px rgba(0,0,0,.8);';
+  card.innerHTML = `<h3>Change Name</h3><input type="text" id="changeNameInput" value="${myName}" maxlength="20">
+    <div class="flex gap-sm"><button class="btn btn-primary btn-sm" onclick="doChangeName()">Save</button>
+    <button class="btn btn-ghost btn-sm" onclick="this.closest('.card').remove()">Cancel</button></div>`;
   document.body.appendChild(card);
   document.getElementById('changeNameInput').focus();
 }
@@ -444,49 +450,31 @@ async function doChangeName() {
   const name = (input.value || '').trim().replace(/\s+/g, '');
   if (!name) return toast('Name cannot be blank');
   if (name.toLowerCase() === 'host') return toast('Name cannot be Host');
-
   await db.ref('players/' + myPCID + '/name').set(name);
   myName = name;
-
-  // Update name in any rooms I'm in
   const snap = await db.ref('rooms').once('value');
   const rooms = snap.val() || {};
-  const updates = {};
+  const u = {};
   for (const [rid, room] of Object.entries(rooms)) {
-    if (room.players && room.players[myPCID]) {
-      updates[`rooms/${rid}/players/${myPCID}/name`] = name;
-    }
+    if (room.players && room.players[myPCID]) u[`rooms/${rid}/players/${myPCID}/name`] = name;
   }
-  if (Object.keys(updates).length > 0) await db.ref().update(updates);
-
+  if (Object.keys(u).length) await db.ref().update(u);
   input.closest('.card').remove();
-  toast('Name updated!');
-  route();
+  toast('Name updated!'); route();
 }
 
 async function createRoom() {
-  const nameInput = document.getElementById('newRoomName');
-  const rName = (nameInput.value || '').trim() || 'Room ' + genRoomId().substring(0, 4);
+  const ni = document.getElementById('newRoomName');
+  const rName = (ni.value || '').trim() || 'Room ' + genRoomId().substring(0, 4);
   const roomId = genRoomId();
-
   await db.ref('rooms/' + roomId).set({
-    name: rName,
-    createdAt: Date.now(),
-    gameState: 'Login',
-    fascistScore: 0,
-    liberalScore: 0,
-    voteRetryCount: 1,
-    toBeChancellorName: '',
-    gameElement: '',
-    fascistBoardImage: '',
-    presidentVeto: false,
-    chancellorVeto: false,
-    drawPolicyPile: createDrawPolicyPile(),
-    discardPolicyPile: [],
-    playerOrder: [],
-    players: {}
+    name: rName, createdAt: Date.now(), gameState: 'Login',
+    fascistScore: 0, liberalScore: 0, voteRetryCount: 1,
+    toBeChancellorName: '', gameElement: '', fascistBoardImage: '',
+    presidentVeto: false, chancellorVeto: false,
+    drawPolicyPile: createDrawPolicyPile(), discardPolicyPile: [],
+    playerOrder: [], players: {}, lastVotes: null
   });
-
   location.hash = '#room/' + roomId;
 }
 
@@ -496,56 +484,29 @@ async function createRoom() {
 async function enterRoom(roomId) {
   currentRoom = roomId;
   app.innerHTML = '<div class="loader">Joining room...</div>';
-
   const snap = await db.ref('rooms/' + roomId).once('value');
-  if (!snap.exists()) {
-    toast('Room not found');
-    location.hash = '#lobby';
-    return;
-  }
-
+  if (!snap.exists()) { toast('Room not found'); location.hash = '#lobby'; return; }
   const room = snap.val();
   const gs = room.gameState || 'Login';
   const players = room.players || {};
   const playerOrder = room.playerOrder || [];
 
-  // If I'm not in the room yet
   if (!players[myPCID]) {
-    if (gs !== 'Login') {
-      toast('Game already started');
-      location.hash = '#lobby';
-      return;
-    }
-    // Check name collision
+    if (gs !== 'Login') { toast('Game already started'); location.hash = '#lobby'; return; }
     for (const pcid in players) {
-      if (players[pcid].name === myName && pcid !== myPCID) {
-        toast('Name already in use in this room');
-        location.hash = '#lobby';
-        return;
-      }
+      if (players[pcid].name === myName && pcid !== myPCID) { toast('Name already in use in this room'); location.hash = '#lobby'; return; }
     }
     const isVip = playerOrder.length === 0 && Object.keys(players).length === 0;
     await db.ref('rooms/' + roomId + '/players/' + myPCID).set({
-      name: myName,
-      vip: isVip,
-      identity: 'Liberal',
-      inGameStatus: 'InGame',
-      president: false,
-      chancellor: false,
-      vote: 'null'
+      name: myName, vip: isVip, identity: 'Liberal', inGameStatus: 'InGame',
+      president: false, chancellor: false, vote: 'null'
     });
-    const newOrder = [...playerOrder, myPCID];
-    await db.ref('rooms/' + roomId + '/playerOrder').set(newOrder);
+    await db.ref('rooms/' + roomId + '/playerOrder').set([...playerOrder, myPCID]);
   }
 
-  // Listen to room changes
   const ref = db.ref('rooms/' + roomId);
   const cb = ref.on('value', snap => {
-    if (!snap.exists()) {
-      toast('Room was deleted');
-      location.hash = '#lobby';
-      return;
-    }
+    if (!snap.exists()) { toast('Room was deleted'); location.hash = '#lobby'; return; }
     currentRoomData = snap.val();
     renderRoom(roomId, currentRoomData);
   });
@@ -553,57 +514,36 @@ async function enterRoom(roomId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// RENDER ROOM (PLAYER VIEW)
+// RENDER ROOM
 // ═══════════════════════════════════════════════════════════════════
 function renderRoom(roomId, room) {
   const gs = room.gameState || 'Login';
   const players = getPlayerArray(room);
   const me = getMe(room);
-
-  if (!me) {
-    app.innerHTML = '<div class="loader">Reconnecting...</div>';
-    enterRoom(roomId);
-    return;
-  }
-
-  if (gs === 'Login') {
-    renderLobbyWait(roomId, room, players, me);
-  } else {
-    renderGamePlayer(roomId, room, players, me);
-  }
+  if (!me) { app.innerHTML = '<div class="loader">Reconnecting...</div>'; enterRoom(roomId); return; }
+  if (gs === 'Login') renderLobbyWait(roomId, room, players, me);
+  else renderGamePlayer(roomId, room, players, me);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// LOBBY WAIT (in room, game not started)
-// ═══════════════════════════════════════════════════════════════════
 function renderLobbyWait(roomId, room, players, me) {
   let html = `
     <div class="flex" style="justify-content:space-between;align-items:center;">
       <h2>${room.name || roomId}</h2>
       <button class="btn btn-ghost btn-sm" onclick="leaveRoom('${roomId}')">Leave</button>
     </div>
-    <div class="text-dim text-sm text-center">Room: ${roomId} · Host view: <a href="#host/${roomId}" style="color:var(--gold);">#host/${roomId}</a></div>
+    <div class="text-center"><img src="${IMG}Logo.png" style="max-width:200px;width:50%;" onerror="this.style.display='none'"></div>
+    <div class="text-dim text-sm text-center">Room: ${roomId} · Host TV: <a href="#host/${roomId}" style="color:var(--gold);">#host/${roomId}</a></div>
     <div class="text-center text-dim">Waiting for players... (${players.length}/10)</div>`;
-
   html += '<div class="flex-col gap-sm">';
   for (const p of players) {
-    html += `<div class="player-row">
-      <div class="name">${p.name}${p.pcid === myPCID ? ' (You)' : ''}</div>
-      <div class="badges">${p.vip ? '<span class="badge badge-vip">VIP</span>' : ''}</div>
-    </div>`;
+    html += `<div class="player-row"><div class="name">${p.name}${p.pcid === myPCID ? ' (You)' : ''}</div>
+      <div class="badges">${p.vip ? '<span class="badge badge-vip">VIP</span>' : ''}</div></div>`;
   }
   html += '</div>';
-
-  if (me.vip && players.length >= 5) {
-    html += `<button class="btn btn-primary btn-full mt" onclick="startGame('${roomId}')">Start Game (${players.length} players)</button>`;
-  } else if (me.vip) {
-    html += `<div class="text-center text-dim mt">Need at least 5 players to start (have ${players.length})</div>`;
-  } else {
-    html += `<div class="text-center text-dim mt">Waiting for VIP to start...</div>`;
-  }
-
+  if (me.vip && players.length >= 5) html += `<button class="btn btn-primary btn-full mt" onclick="startGame('${roomId}')">Start Game (${players.length} players)</button>`;
+  else if (me.vip) html += `<div class="text-center text-dim mt">Need at least 5 players to start (have ${players.length})</div>`;
+  else html += `<div class="text-center text-dim mt">Waiting for VIP to start...</div>`;
   html += `<button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn" style="align-self:center;margin-top:8px;">${audioMuted ? '🔇 Unmute' : '🔊 Mute'}</button>`;
-
   app.innerHTML = html;
 }
 
@@ -611,20 +551,14 @@ async function leaveRoom(roomId) {
   const snap = await db.ref('rooms/' + roomId).once('value');
   if (!snap.exists()) { location.hash = '#lobby'; return; }
   const room = snap.val();
-  if (room.gameState !== 'Login') {
-    toast("Can't leave during a game");
-    return;
-  }
+  if (room.gameState !== 'Login') { toast("Can't leave during a game"); return; }
   const order = (room.playerOrder || []).filter(p => p !== myPCID);
-  const updates = {};
-  updates['rooms/' + roomId + '/players/' + myPCID] = null;
-  updates['rooms/' + roomId + '/playerOrder'] = order;
-
-  // If I was VIP, assign to next
-  if (room.players[myPCID] && room.players[myPCID].vip && order.length > 0) {
-    updates['rooms/' + roomId + '/players/' + order[0] + '/vip'] = true;
-  }
-  await db.ref().update(updates);
+  const u = {};
+  u['rooms/' + roomId + '/players/' + myPCID] = null;
+  u['rooms/' + roomId + '/playerOrder'] = order;
+  if (room.players[myPCID] && room.players[myPCID].vip && order.length > 0)
+    u['rooms/' + roomId + '/players/' + order[0] + '/vip'] = true;
+  await db.ref().update(u);
   location.hash = '#lobby';
 }
 
@@ -634,43 +568,38 @@ async function leaveRoom(roomId) {
 async function startGame(roomId) {
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
-  const players = getPlayerArray(room);
   const order = room.playerOrder || [];
-
+  const players = getPlayerArray(room);
   if (players.length < 5) return toast('Need 5+ players');
 
   const pile = createDrawPolicyPile();
   const identities = identityList(players.length);
   const randPres = Math.floor(Math.random() * players.length);
+  let boardImg = players.length < 7 ? 'FascistBoard_5' : (players.length < 9 ? 'FascistBoard_7' : 'FascistBoard_9');
 
-  let boardImg = '';
-  if (players.length < 7) boardImg = 'FascistBoard_5';
-  else if (players.length < 9) boardImg = 'FascistBoard_7';
-  else boardImg = 'FascistBoard_9';
-
-  const updates = {};
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/fascistScore`] = 0;
-  updates[`rooms/${roomId}/liberalScore`] = 0;
-  updates[`rooms/${roomId}/voteRetryCount`] = 1;
-  updates[`rooms/${roomId}/toBeChancellorName`] = '';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  updates[`rooms/${roomId}/fascistBoardImage`] = boardImg;
-  updates[`rooms/${roomId}/presidentVeto`] = false;
-  updates[`rooms/${roomId}/chancellorVeto`] = false;
-  updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-  updates[`rooms/${roomId}/discardPolicyPile`] = [];
+  const u = {};
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/fascistScore`] = 0;
+  u[`rooms/${roomId}/liberalScore`] = 0;
+  u[`rooms/${roomId}/voteRetryCount`] = 1;
+  u[`rooms/${roomId}/toBeChancellorName`] = '';
+  u[`rooms/${roomId}/gameElement`] = '';
+  u[`rooms/${roomId}/fascistBoardImage`] = boardImg;
+  u[`rooms/${roomId}/presidentVeto`] = false;
+  u[`rooms/${roomId}/chancellorVeto`] = false;
+  u[`rooms/${roomId}/drawPolicyPile`] = pile;
+  u[`rooms/${roomId}/discardPolicyPile`] = [];
+  u[`rooms/${roomId}/lastVotes`] = null;
 
   for (let i = 0; i < order.length; i++) {
     const pcid = order[i];
-    updates[`rooms/${roomId}/players/${pcid}/identity`] = identities[i];
-    updates[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'InGame';
-    updates[`rooms/${roomId}/players/${pcid}/president`] = i === randPres;
-    updates[`rooms/${roomId}/players/${pcid}/chancellor`] = false;
-    updates[`rooms/${roomId}/players/${pcid}/vote`] = 'null';
+    u[`rooms/${roomId}/players/${pcid}/identity`] = identities[i];
+    u[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'InGame';
+    u[`rooms/${roomId}/players/${pcid}/president`] = i === randPres;
+    u[`rooms/${roomId}/players/${pcid}/chancellor`] = false;
+    u[`rooms/${roomId}/players/${pcid}/vote`] = 'null';
   }
-
-  await db.ref().update(updates);
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
@@ -679,46 +608,47 @@ async function startGame(roomId) {
 // ═══════════════════════════════════════════════════════════════════
 function renderGamePlayer(roomId, room, players, me) {
   const gs = room.gameState;
-  const pres = getPresident(players);
-  const chan = getChancellor(players);
-  const isMe = (p) => p && p.pcid === myPCID;
-
   let html = '';
 
-  // Player info bar
-  html += `<div class="flex" style="justify-content:space-between;">
-    <div><strong>${me.name}</strong>
-      ${me.vip ? '<span class="badge badge-vip">VIP</span>' : ''}
-      ${me.president ? '<span class="badge badge-pres">President</span>' : ''}
-      ${me.chancellor ? '<span class="badge badge-chan">Chancellor</span>' : ''}
-    </div>
-    <button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button>
-  </div>`;
+  // Header with role images
+  html += `<div class="flex" style="justify-content:space-between;"><div style="display:flex;align-items:center;gap:8px;">`;
+  if (me.president) html += `<img src="${IMG}President.png" class="role-img" title="President">`;
+  if (me.chancellor) html += `<img src="${IMG}Chancellor.png" class="role-img" title="Chancellor">`;
+  html += `<strong>${me.name}</strong>`;
+  if (me.vip) html += ' <span class="badge badge-vip">VIP</span>';
+  html += `</div><button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button></div>`;
+
+  // Mini score
+  html += miniScoreHtml(room);
 
   // Identity peek
   html += `<div class="identity-card card" id="identityCard" onclick="toggleIdentity()">
     <img id="identityImg" src="${IMG}ShowIdentity.png" style="max-width:100px;">
-    <div id="identityText" style="margin-top:6px;"></div>
-  </div>`;
+    <div id="identityText" style="margin-top:6px;"></div></div>`;
 
-  // Game End screens
+  // Game end
   if (gs === 'GameEndFASCIST' || gs === 'GameEndLIBERAL') {
     html += renderGameEnd(room, players, me);
-    app.innerHTML = html;
-    return;
+    html += ruleTipHtml(gs, room);
+    app.innerHTML = html; return;
   }
 
   // Dead
   if (me.inGameStatus === 'Dead') {
-    html += '<div class="card text-center"><h2 class="text-red">You are dead...</h2></div>';
-    app.innerHTML = html;
-    return;
+    html += '<div class="card text-center"><h2 class="text-red">You are dead...</h2><div class="text-dim text-sm mt">Dead players may not speak, vote, or run for office.</div></div>';
+    app.innerHTML = html; return;
   }
 
-  // Game state specific UI
+  // Last vote results banner (show on non-voting states)
+  if (gs !== 'VoteChancellor' && room.lastVotes) html += voteResultBannerHtml(room);
+
+  // Game action
   html += '<div class="card flex-col gap-sm" id="gameAction">';
   html += renderGameAction(roomId, room, players, me, gs);
   html += '</div>';
+
+  // Rule tip
+  html += ruleTipHtml(gs, room);
 
   app.innerHTML = html;
 }
@@ -731,12 +661,10 @@ function renderGameAction(roomId, room, players, me, gs) {
 
   if (gs === 'ChooseChancellor') {
     if (me.president) {
-      html += '<h3 class="text-gold">Choose a Chancellor</h3>';
-      html += '<div class="flex flex-wrap gap-sm" id="playerBtns">';
+      html += '<h3 class="text-gold">Choose a Chancellor</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
       for (const p of players) {
-        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') {
+        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead')
           html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`;
-        }
       }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitBtn" onclick="submitChancellor('${roomId}')" disabled>Submit</button>`;
@@ -747,63 +675,76 @@ function renderGameAction(roomId, room, players, me, gs) {
 
   else if (gs === 'VoteChancellor') {
     html += `<h3 class="text-gold">Vote for Chancellor: ${room.toBeChancellorName}</h3>`;
-    if (me.vote === 'null') {
+    const allIn = allVotesIn(players);
+
+    // Player vote status list: show "Voted" or actual vote if all in
+    html += '<div class="flex-col gap-sm mt">';
+    for (const p of players) {
+      if (p.inGameStatus === 'Dead') continue;
+      const voted = p.vote && p.vote !== 'null';
+      let vd = '';
+      if (allIn && voted) {
+        vd = `<span class="${p.vote === 'ja' ? 'vr-ja' : 'vr-nein'}" style="font-weight:700">${p.vote.toUpperCase()}</span>`;
+      } else if (voted) {
+        vd = '<span class="badge badge-voted">Voted</span>';
+      } else {
+        vd = '<span class="text-dim text-sm">Waiting...</span>';
+      }
+      html += `<div class="player-row"><div class="name">${p.name}${p.pcid === myPCID ? ' (You)' : ''}</div><div>${vd}</div></div>`;
+    }
+    html += '</div>';
+
+    if (!me.vote || me.vote === 'null') {
       html += `<div class="flex flex-center gap-lg mt">
         <img src="${IMG}ja.png" class="vote-img" onclick="selectVote(this,'ja')" data-vote="ja">
         <img src="${IMG}nein.png" class="vote-img" onclick="selectVote(this,'nein')" data-vote="nein">
       </div>`;
       html += `<button class="btn btn-primary btn-full mt" id="submitVoteBtn" onclick="submitVote('${roomId}')" disabled>Submit Vote</button>`;
-    } else {
-      html += '<div class="text-center text-dim mt">Waiting for other votes...</div>';
+    } else if (!allIn) {
+      html += '<div class="text-center text-dim mt">Your vote is in. Waiting for others...</div>';
     }
   }
 
   else if (gs === 'RemovePolicy') {
     if (me.president) {
-      html += '<h3 class="text-gold">Remove one policy (discard it)</h3>';
-      html += '<div class="flex flex-center gap-lg mt">';
+      html += '<h3 class="text-gold">Discard one policy tile</h3><div class="flex flex-center gap-lg mt">';
       const start = Math.max(0, pile.length - 3);
-      for (let i = start; i < pile.length; i++) {
-        html += `<img src="${IMG}${pile[i]}_P.png" class="policy-img" onclick="selectPolicy(this, ${i})" data-idx="${i}">`;
-      }
+      for (let i = start; i < pile.length; i++)
+        html += `<img src="${IMG}${pile[i]}_P.png" class="policy-img" onclick="selectPolicy(this,${i})" data-idx="${i}">`;
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitPolicyBtn" onclick="submitRemovePolicy('${roomId}')" disabled>Discard Selected</button>`;
     } else {
-      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is removing a policy...</h3>`;
+      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is reviewing policies...</h3>`;
+      html += '<div class="text-center text-dim text-sm mt">🔇 The legislative session is in progress. Silence.</div>';
     }
   }
 
   else if (gs === 'ChoosePolicy') {
     if (me.chancellor) {
-      html += '<h3 class="text-gold">Choose a policy to enact</h3>';
-      html += '<div class="flex flex-center gap-lg mt">';
+      html += '<h3 class="text-gold">Enact one policy</h3><div class="flex flex-center gap-lg mt">';
       const start = Math.max(0, pile.length - 2);
-      for (let i = start; i < pile.length; i++) {
-        html += `<img src="${IMG}${pile[i]}_P.png" class="policy-img" onclick="selectPolicy(this, ${i})" data-idx="${i}">`;
-      }
+      for (let i = start; i < pile.length; i++)
+        html += `<img src="${IMG}${pile[i]}_P.png" class="policy-img" onclick="selectPolicy(this,${i})" data-idx="${i}">`;
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitPolicyBtn" onclick="submitChoosePolicy('${roomId}')" disabled>Enact Selected</button>`;
-      if (room.gameElement === 'VETO') {
-        html += `<div class="mt text-center"><div class="text-red text-sm">If both President and Chancellor veto, a new president is chosen</div>
-          <button class="btn btn-danger btn-sm mt" onclick="submitVeto('${roomId}','CHANCELLOR')">VETO?</button></div>`;
-      }
+      if (room.gameElement === 'VETO')
+        html += `<div class="mt text-center"><button class="btn btn-danger btn-sm mt" onclick="submitVeto('${roomId}','CHANCELLOR')">Propose Veto</button></div>`;
     } else if (me.president && room.gameElement === 'VETO') {
       html += `<h3 class="text-dim">${chan ? chan.name : '...'} is choosing a policy...</h3>`;
-      html += `<div class="mt text-center"><div class="text-red text-sm">If both President and Chancellor veto, a new president is chosen</div>
-        <button class="btn btn-danger btn-sm mt" onclick="submitVeto('${roomId}','PRESIDENT')">VETO?</button></div>`;
+      html += '<div class="text-center text-dim text-sm mt">🔇 Legislative session in progress.</div>';
+      html += `<div class="mt text-center"><button class="btn btn-danger btn-sm mt" onclick="submitVeto('${roomId}','PRESIDENT')">Agree to Veto</button></div>`;
     } else {
       html += `<h3 class="text-dim">${chan ? chan.name : '...'} is choosing a policy...</h3>`;
+      html += '<div class="text-center text-dim text-sm mt">🔇 Legislative session in progress. Silence.</div>';
     }
   }
 
   else if (gs === 'ExaminPolicy') {
     if (me.president) {
-      html += '<h3 class="text-gold">Examine top 3 policies</h3>';
-      html += '<div class="flex flex-center gap-lg mt">';
+      html += '<h3 class="text-gold">Examine top 3 policies</h3><div class="flex flex-center gap-lg mt">';
       const start = Math.max(0, pile.length - 3);
-      for (let i = start; i < pile.length; i++) {
+      for (let i = start; i < pile.length; i++)
         html += `<img src="${IMG}${pile[i]}_P.png" class="policy-img" style="cursor:default;">`;
-      }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" onclick="submitExaminDone('${roomId}')">Done Examining</button>`;
     } else {
@@ -813,18 +754,11 @@ function renderGameAction(roomId, room, players, me, gs) {
 
   else if (gs === 'ChooseExaminPlayer') {
     if (me.president) {
-      html += '<h3 class="text-gold">Choose a player to investigate</h3>';
-      html += '<div class="flex flex-wrap gap-sm">';
-      for (const p of players) {
-        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') {
-          html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`;
-        }
-      }
+      html += '<h3 class="text-gold">Choose a player to investigate</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitBtn" onclick="submitExaminPlayer('${roomId}')" disabled>Investigate</button>`;
-    } else {
-      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to investigate...</h3>`;
-    }
+    } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to investigate...</h3>`; }
   }
 
   else if (gs === 'ExaminPlayer') {
@@ -836,41 +770,25 @@ function renderGameAction(roomId, room, players, me, gs) {
         html += `<div class="text-center mt text-sm">${target.name} is <strong>${target.identity}</strong></div>`;
       }
       html += `<button class="btn btn-primary btn-full mt" onclick="submitExaminPlayerDone('${roomId}')">Done</button>`;
-    } else {
-      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is investigating ${room.gameElement}...</h3>`;
-    }
+    } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is investigating ${room.gameElement}...</h3>`; }
   }
 
   else if (gs === 'ChooseKillPlayer') {
     if (me.president) {
-      html += '<h3 class="text-red">Choose a player to EXECUTE</h3>';
-      html += '<div class="flex flex-wrap gap-sm">';
-      for (const p of players) {
-        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') {
-          html += `<button class="btn btn-danger" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`;
-        }
-      }
+      html += '<h3 class="text-red">Choose a player to EXECUTE</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-danger" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-danger btn-full mt" id="submitBtn" onclick="submitKill('${roomId}')" disabled>Execute</button>`;
-    } else {
-      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to execute... 💀</h3>`;
-    }
+    } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing someone to execute... 💀</h3>`; }
   }
 
   else if (gs === 'ChoosePresidentPlayer') {
     if (me.president) {
-      html += '<h3 class="text-gold">Choose the next President</h3>';
-      html += '<div class="flex flex-wrap gap-sm">';
-      for (const p of players) {
-        if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') {
-          html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`;
-        }
-      }
+      html += '<h3 class="text-gold">Choose the next President</h3><div class="flex flex-wrap gap-sm" id="playerBtns">';
+      for (const p of players) { if (p.pcid !== myPCID && p.inGameStatus !== 'Dead') html += `<button class="btn btn-secondary" onclick="selectPlayer(this,'${p.name}')">${p.name}</button>`; }
       html += '</div>';
       html += `<button class="btn btn-primary btn-full mt" id="submitBtn" onclick="submitChoosePresident('${roomId}')" disabled>Confirm</button>`;
-    } else {
-      html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing the next president...</h3>`;
-    }
+    } else { html += `<h3 class="text-dim">${pres ? pres.name : '...'} is choosing the next president...</h3>`; }
   }
 
   return html;
@@ -881,26 +799,21 @@ function renderGameEnd(room, players, me) {
   const won = gs === 'GameEndLIBERAL' ? 'LIBERAL' : 'FASCIST';
   let html = `<div class="card text-center flex-col gap-sm">
     <h2 class="${won === 'LIBERAL' ? 'text-blue' : 'text-red'}">${won}S WIN!</h2>`;
-
   if (me.identity === 'Liberal' && won === 'LIBERAL') html += '<div class="text-green">Your team won!</div>';
   else if (me.identity !== 'Liberal' && won === 'FASCIST') html += '<div class="text-red">Your team won!</div>';
   else html += '<div class="text-dim">Your team lost...</div>';
-
   html += '<div class="flex-col gap-sm mt">';
   for (const p of players) {
     const cls = p.identity === 'Liberal' ? 'badge-liberal' : (p.identity === 'Hitler' ? 'badge-hitler' : 'badge-fascist');
     html += `<div class="player-row"><div class="name">${p.name}</div><span class="badge ${cls}">${p.identity}</span></div>`;
   }
   html += '</div>';
-
   if (me.vip) {
     html += `<div class="flex gap-sm mt">
       <button class="btn btn-primary" onclick="restartSamePlayers('${currentRoom}')">Same Players</button>
-      <button class="btn btn-danger" onclick="resetNewPlayers('${currentRoom}')">New Players</button>
-    </div>`;
+      <button class="btn btn-danger" onclick="resetNewPlayers('${currentRoom}')">New Players</button></div>`;
   }
-  html += '</div>';
-  return html;
+  return html + '</div>';
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -912,374 +825,241 @@ function toggleIdentity() {
   const img = document.getElementById('identityImg');
   const txt = document.getElementById('identityText');
   if (!img || !txt || !currentRoomData) return;
-
   const me = getMe(currentRoomData);
   const players = getPlayerArray(currentRoomData);
   if (!me) return;
-
   if (identityShowing) {
     img.src = IMG + me.identity + '.png';
     let str = 'You are: ' + me.identity;
     if (me.identity === 'Fascist' || (players.length < 7 && me.identity === 'Hitler')) {
-      for (const p of players) {
-        if (p.pcid !== myPCID && p.identity !== 'Liberal') {
-          str += '\n' + p.name + ': ' + p.identity;
-        }
-      }
+      for (const p of players) { if (p.pcid !== myPCID && p.identity !== 'Liberal') str += '\n' + p.name + ': ' + p.identity; }
     }
-    txt.textContent = str;
-    txt.style.whiteSpace = 'pre-line';
-  } else {
-    img.src = IMG + 'ShowIdentity.png';
-    txt.textContent = '';
-  }
+    txt.textContent = str; txt.style.whiteSpace = 'pre-line';
+  } else { img.src = IMG + 'ShowIdentity.png'; txt.textContent = ''; }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PLAYER SELECTION HELPERS
+// SELECTION HELPERS
 // ═══════════════════════════════════════════════════════════════════
-let _selectedPlayerName = null;
+let _sel = null;
 function selectPlayer(btn, name) {
   document.querySelectorAll('#playerBtns .btn, #gameAction .btn-secondary, #gameAction .btn-danger').forEach(b => b.classList.remove('selected'));
-  if (_selectedPlayerName === name) {
-    _selectedPlayerName = null;
-  } else {
-    _selectedPlayerName = name;
-    btn.classList.add('selected');
-  }
+  _sel = (_sel === name) ? null : name;
+  if (_sel) btn.classList.add('selected');
   const sub = document.getElementById('submitBtn');
-  if (sub) sub.disabled = !_selectedPlayerName;
+  if (sub) sub.disabled = !_sel;
 }
 
-let _selectedVote = null;
+let _selVote = null;
 function selectVote(img, vote) {
   document.querySelectorAll('.vote-img').forEach(i => i.classList.remove('selected'));
-  if (_selectedVote === vote) {
-    _selectedVote = null;
-  } else {
-    _selectedVote = vote;
-    img.classList.add('selected');
-  }
+  _selVote = (_selVote === vote) ? null : vote;
+  if (_selVote) img.classList.add('selected');
   const sub = document.getElementById('submitVoteBtn');
-  if (sub) sub.disabled = !_selectedVote;
+  if (sub) sub.disabled = !_selVote;
 }
 
-let _selectedPolicyIdx = null;
+let _selPolicy = null;
 function selectPolicy(img, idx) {
   document.querySelectorAll('.policy-img').forEach(i => i.classList.remove('selected'));
-  if (_selectedPolicyIdx === idx) {
-    _selectedPolicyIdx = null;
-  } else {
-    _selectedPolicyIdx = idx;
-    img.classList.add('selected');
-  }
+  _selPolicy = (_selPolicy === idx) ? null : idx;
+  if (_selPolicy !== null) img.classList.add('selected');
   const sub = document.getElementById('submitPolicyBtn');
-  if (sub) sub.disabled = (_selectedPolicyIdx === null);
+  if (sub) sub.disabled = (_selPolicy === null);
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // GAME ACTIONS
 // ═══════════════════════════════════════════════════════════════════
 async function submitChancellor(roomId) {
-  if (!_selectedPlayerName) return;
-  const name = _selectedPlayerName;
-  _selectedPlayerName = null;
-  buzz();
-  playAudio('VoteChancellor');
-
+  if (!_sel) return;
+  const name = _sel; _sel = null; buzz(); playAudio('VoteChancellor');
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   const order = room.playerOrder || [];
-  const updates = {};
-
-  // Reset all votes
-  for (const pcid of order) {
-    updates[`rooms/${roomId}/players/${pcid}/vote`] = 'null';
-  }
-  updates[`rooms/${roomId}/toBeChancellorName`] = name;
-  updates[`rooms/${roomId}/gameState`] = 'VoteChancellor';
-
-  await db.ref().update(updates);
+  const u = {};
+  for (const pcid of order) u[`rooms/${roomId}/players/${pcid}/vote`] = 'null';
+  u[`rooms/${roomId}/toBeChancellorName`] = name;
+  u[`rooms/${roomId}/gameState`] = 'VoteChancellor';
+  u[`rooms/${roomId}/lastVotes`] = null;
+  await db.ref().update(u);
 }
 
 async function submitVote(roomId) {
-  if (!_selectedVote) return;
-  const vote = _selectedVote;
-  _selectedVote = null;
-  buzz();
-
+  if (!_selVote) return;
+  const vote = _selVote; _selVote = null; buzz();
   await db.ref(`rooms/${roomId}/players/${myPCID}/vote`).set(vote);
 
-  // Check if all votes are in
+  // Check if all votes in
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   const players = getPlayerArray(room);
-
-  let deadCount = 0, jaCount = 0, neinCount = 0;
+  let dead = 0, ja = 0, nein = 0;
   for (const p of players) {
-    if (p.inGameStatus === 'Dead') deadCount++;
-    if (p.vote === 'ja') jaCount++;
-    if (p.vote === 'nein') neinCount++;
+    if (p.inGameStatus === 'Dead') dead++;
+    if (p.vote === 'ja') ja++;
+    if (p.vote === 'nein') nein++;
   }
-
-  if (deadCount + jaCount + neinCount === players.length) {
-    await processVoteResult(roomId, room, players, jaCount, neinCount);
+  if (dead + ja + nein === players.length && !_voteProcessing) {
+    _voteProcessing = true;
+    // 2.5s delay so everyone sees revealed votes
+    setTimeout(async () => {
+      await processVoteResult(roomId, room, players, ja, nein);
+      _voteProcessing = false;
+    }, 2500);
   }
 }
 
 async function processVoteResult(roomId, room, players, jaCount, neinCount) {
-  const updates = {};
+  const u = {};
   const order = room.playerOrder || [];
   let pile = [...(room.drawPolicyPile || [])];
   let discard = [...(room.discardPolicyPile || [])];
-  let fScore = room.fascistScore || 0;
-  let lScore = room.liberalScore || 0;
-  let voteRetry = room.voteRetryCount || 1;
+  let fS = room.fascistScore || 0, lS = room.liberalScore || 0;
+  let vr = room.voteRetryCount || 1;
   const chanName = room.toBeChancellorName;
 
+  // Save votes for the results banner
+  const rec = { chancellorName: chanName, votes: {}, result: jaCount > neinCount ? 'pass' : 'fail' };
+  for (const p of players) { if (p.inGameStatus !== 'Dead') rec.votes[p.name] = p.vote; }
+  u[`rooms/${roomId}/lastVotes`] = rec;
+
   if (jaCount > neinCount) {
-    // Set chancellor
     for (const pcid of order) {
-      if (room.players[pcid].name === chanName) {
-        updates[`rooms/${roomId}/players/${pcid}/chancellor`] = true;
-      }
+      if (room.players[pcid] && room.players[pcid].name === chanName) u[`rooms/${roomId}/players/${pcid}/chancellor`] = true;
     }
-
-    // Check if Hitler elected chancellor with fascist score > 3
-    if (fScore >= 3) {
-      const chanPlayer = players.find(p => p.name === chanName);
-      if (chanPlayer && chanPlayer.identity === 'Hitler') {
-        updates[`rooms/${roomId}/gameState`] = 'GameEndFASCIST';
-        await db.ref().update(updates);
-        return;
-      }
+    if (fS >= 3) {
+      const ch = players.find(p => p.name === chanName);
+      if (ch && ch.identity === 'Hitler') { u[`rooms/${roomId}/gameState`] = 'GameEndFASCIST'; await db.ref().update(u); return; }
     }
-
-    updates[`rooms/${roomId}/gameState`] = 'RemovePolicy';
-    updates[`rooms/${roomId}/voteRetryCount`] = 0;
+    u[`rooms/${roomId}/gameState`] = 'RemovePolicy';
+    u[`rooms/${roomId}/voteRetryCount`] = 0;
   } else {
-    // Failed vote
-    voteRetry++;
+    vr++;
     let nextState = 'ChooseChancellor';
-
-    if (voteRetry > 3) {
-      voteRetry = 0;
+    if (vr > 3) {
+      vr = 0;
       if (pile.length > 0) {
-        const topPolicy = pile.pop();
-        discard.push(topPolicy);
-
-        if (topPolicy === 'FASCIST') fScore++;
-        else lScore++;
-
-        updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-        updates[`rooms/${roomId}/discardPolicyPile`] = discard;
-        updates[`rooms/${roomId}/fascistScore`] = fScore;
-        updates[`rooms/${roomId}/liberalScore`] = lScore;
-
-        if (lScore >= 5) {
-          updates[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL';
-          updates[`rooms/${roomId}/voteRetryCount`] = voteRetry;
-          await db.ref().update(updates);
-          return;
-        }
-        if (fScore >= 6) {
-          updates[`rooms/${roomId}/gameState`] = 'GameEndFASCIST';
-          updates[`rooms/${roomId}/voteRetryCount`] = voteRetry;
-          await db.ref().update(updates);
-          return;
-        }
-
-        // Check special action
-        const special = checkSpecialAction(fScore, players.length);
-        if (special && topPolicy === 'FASCIST') {
-          nextState = special;
-        }
-
-        if (pile.length < 3) {
-          pile = shuffle(shuffle(discard)).concat(pile);
-          discard = [];
-          updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-          updates[`rooms/${roomId}/discardPolicyPile`] = discard;
-        }
+        const top = pile.pop(); discard.push(top);
+        if (top === 'FASCIST') fS++; else lS++;
+        u[`rooms/${roomId}/drawPolicyPile`] = pile;
+        u[`rooms/${roomId}/discardPolicyPile`] = discard;
+        u[`rooms/${roomId}/fascistScore`] = fS;
+        u[`rooms/${roomId}/liberalScore`] = lS;
+        if (lS >= 5) { u[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL'; u[`rooms/${roomId}/voteRetryCount`] = vr; await db.ref().update(u); return; }
+        if (fS >= 6) { u[`rooms/${roomId}/gameState`] = 'GameEndFASCIST'; u[`rooms/${roomId}/voteRetryCount`] = vr; await db.ref().update(u); return; }
+        const sp = checkSpecial(fS, players.length);
+        if (sp && top === 'FASCIST') nextState = sp;
+        if (pile.length < 3) { pile = shuffle(shuffle(discard)).concat(pile); discard = []; u[`rooms/${roomId}/drawPolicyPile`] = pile; u[`rooms/${roomId}/discardPolicyPile`] = discard; }
       }
     }
-
-    updates[`rooms/${roomId}/voteRetryCount`] = voteRetry;
-
-    if (nextState === 'ChooseChancellor') {
-      setNextPresident(updates, roomId, room, '');
-    }
-    updates[`rooms/${roomId}/gameState`] = nextState;
-    updates[`rooms/${roomId}/toBeChancellorName`] = '';
+    u[`rooms/${roomId}/voteRetryCount`] = vr;
+    if (nextState === 'ChooseChancellor') setNextPres(u, roomId, room, '');
+    u[`rooms/${roomId}/gameState`] = nextState;
+    u[`rooms/${roomId}/toBeChancellorName`] = '';
   }
-
-  await db.ref().update(updates);
+  await db.ref().update(u);
 }
 
-function checkSpecialAction(fScore, playerCount) {
-  if ((playerCount === 7 || playerCount === 8) && fScore === 2) return 'ChooseExaminPlayer';
-  if (playerCount >= 9 && (fScore === 1 || fScore === 2)) return 'ChooseExaminPlayer';
-  if (playerCount < 7 && fScore === 3) return 'ExaminPolicy';
-  if (playerCount >= 7 && fScore === 3) return 'ChoosePresidentPlayer';
-  if (fScore === 4 || fScore === 5) return 'ChooseKillPlayer';
+function checkSpecial(fS, n) {
+  if ((n === 7 || n === 8) && fS === 2) return 'ChooseExaminPlayer';
+  if (n >= 9 && (fS === 1 || fS === 2)) return 'ChooseExaminPlayer';
+  if (n < 7 && fS === 3) return 'ExaminPolicy';
+  if (n >= 7 && fS === 3) return 'ChoosePresidentPlayer';
+  if (fS === 4 || fS === 5) return 'ChooseKillPlayer';
   return null;
 }
 
-function setNextPresident(updates, roomId, room, specificName) {
+function setNextPres(u, roomId, room, specificName) {
   const order = room.playerOrder || [];
-  const players = room.players || {};
-  let presIdx = -1;
-
-  // Find current president
+  const pl = room.players || {};
+  let idx = -1;
   for (let i = 0; i < order.length; i++) {
     const pcid = order[i];
-    if (players[pcid] && players[pcid].president) {
-      updates[`rooms/${roomId}/players/${pcid}/president`] = false;
-      if (!specificName) presIdx = i + 1;
-    }
-    if (players[pcid] && players[pcid].chancellor) {
-      updates[`rooms/${roomId}/players/${pcid}/chancellor`] = false;
-    }
+    if (pl[pcid] && pl[pcid].president) { u[`rooms/${roomId}/players/${pcid}/president`] = false; if (!specificName) idx = i + 1; }
+    if (pl[pcid] && pl[pcid].chancellor) u[`rooms/${roomId}/players/${pcid}/chancellor`] = false;
   }
-
-  if (specificName) {
-    for (let i = 0; i < order.length; i++) {
-      if (players[order[i]] && players[order[i]].name === specificName) {
-        presIdx = i;
-        break;
-      }
-    }
-  }
-
-  if (presIdx >= order.length) presIdx = 0;
-  if (presIdx < 0) presIdx = 0;
-
-  // Skip dead players
+  if (specificName) { for (let i = 0; i < order.length; i++) { if (pl[order[i]] && pl[order[i]].name === specificName) { idx = i; break; } } }
+  if (idx >= order.length) idx = 0;
+  if (idx < 0) idx = 0;
   let tries = 0;
-  while (players[order[presIdx]] && players[order[presIdx]].inGameStatus === 'Dead' && tries < order.length) {
-    presIdx++;
-    if (presIdx >= order.length) presIdx = 0;
-    tries++;
-  }
-
-  updates[`rooms/${roomId}/players/${order[presIdx]}/president`] = true;
+  while (pl[order[idx]] && pl[order[idx]].inGameStatus === 'Dead' && tries < order.length) { idx++; if (idx >= order.length) idx = 0; tries++; }
+  u[`rooms/${roomId}/players/${order[idx]}/president`] = true;
 }
 
 async function submitRemovePolicy(roomId) {
-  if (_selectedPolicyIdx === null) return;
-  const idx = _selectedPolicyIdx;
-  _selectedPolicyIdx = null;
-  buzz();
-
+  if (_selPolicy === null) return;
+  const idx = _selPolicy; _selPolicy = null; buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   let pile = [...(room.drawPolicyPile || [])];
   let discard = [...(room.discardPolicyPile || [])];
-  const fScore = room.fascistScore || 0;
-
   const removed = pile.splice(idx, 1)[0];
   discard.push(removed);
-
-  const veto = fScore === 5 ? 'VETO' : '';
-
-  const updates = {};
-  updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-  updates[`rooms/${roomId}/discardPolicyPile`] = discard;
-  updates[`rooms/${roomId}/gameState`] = 'ChoosePolicy';
-  updates[`rooms/${roomId}/gameElement`] = veto;
-
-  await db.ref().update(updates);
+  const veto = (room.fascistScore || 0) === 5 ? 'VETO' : '';
+  await db.ref().update({
+    [`rooms/${roomId}/drawPolicyPile`]: pile,
+    [`rooms/${roomId}/discardPolicyPile`]: discard,
+    [`rooms/${roomId}/gameState`]: 'ChoosePolicy',
+    [`rooms/${roomId}/gameElement`]: veto
+  });
 }
 
 async function submitChoosePolicy(roomId) {
-  if (_selectedPolicyIdx === null) return;
-  const idx = _selectedPolicyIdx;
-  _selectedPolicyIdx = null;
-  buzz();
-
+  if (_selPolicy === null) return;
+  const idx = _selPolicy; _selPolicy = null; buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   let pile = [...(room.drawPolicyPile || [])];
   let discard = [...(room.discardPolicyPile || [])];
-  let fScore = room.fascistScore || 0;
-  let lScore = room.liberalScore || 0;
+  let fS = room.fascistScore || 0, lS = room.liberalScore || 0;
   const players = getPlayerArray(room);
-
-  // Record the chosen policy type before removing
   const chosen = pile[idx];
+  if (chosen === 'FASCIST') fS++; else lS++;
 
-  // Score the chosen policy
-  if (chosen === 'FASCIST') fScore++;
-  else lScore++;
-
-  // Pop both chancellor cards from end of pile into discard (matches original behavior)
+  // Discard both chancellor cards from end of pile
   if (pile.length > 0) discard.push(pile.pop());
   if (pile.length > 0) discard.push(pile.pop());
 
-  const updates = {};
-  updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-  updates[`rooms/${roomId}/discardPolicyPile`] = discard;
-  updates[`rooms/${roomId}/fascistScore`] = fScore;
-  updates[`rooms/${roomId}/liberalScore`] = lScore;
-  updates[`rooms/${roomId}/presidentVeto`] = false;
-  updates[`rooms/${roomId}/chancellorVeto`] = false;
+  const u = {};
+  u[`rooms/${roomId}/drawPolicyPile`] = pile;
+  u[`rooms/${roomId}/discardPolicyPile`] = discard;
+  u[`rooms/${roomId}/fascistScore`] = fS;
+  u[`rooms/${roomId}/liberalScore`] = lS;
+  u[`rooms/${roomId}/presidentVeto`] = false;
+  u[`rooms/${roomId}/chancellorVeto`] = false;
 
-  if (lScore >= 5) {
-    updates[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL';
-    await db.ref().update(updates);
-    return;
-  }
-  if (fScore >= 6) {
-    updates[`rooms/${roomId}/gameState`] = 'GameEndFASCIST';
-    await db.ref().update(updates);
-    return;
-  }
+  if (lS >= 5) { u[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL'; await db.ref().update(u); return; }
+  if (fS >= 6) { u[`rooms/${roomId}/gameState`] = 'GameEndFASCIST'; await db.ref().update(u); return; }
 
-  // Reshuffle if needed
-  if (pile.length < 3) {
-    pile = shuffle(shuffle(discard)).concat(pile);
-    discard = [];
-    updates[`rooms/${roomId}/drawPolicyPile`] = pile;
-    updates[`rooms/${roomId}/discardPolicyPile`] = discard;
-  }
+  if (pile.length < 3) { pile = shuffle(shuffle(discard)).concat(pile); discard = []; u[`rooms/${roomId}/drawPolicyPile`] = pile; u[`rooms/${roomId}/discardPolicyPile`] = discard; }
 
-  // Special action?
   if (chosen === 'FASCIST') {
-    const special = checkSpecialAction(fScore, players.length);
-    if (special) {
-      updates[`rooms/${roomId}/gameState`] = special;
-      await db.ref().update(updates);
-      if (special === 'ChooseChancellor') playAudio('ChooseChancellor');
-      return;
-    }
+    const sp = checkSpecial(fS, players.length);
+    if (sp) { u[`rooms/${roomId}/gameState`] = sp; await db.ref().update(u); return; }
   }
 
-  setNextPresident(updates, roomId, room, '');
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/gameElement`] = '';
-
-  await db.ref().update(updates);
+  setNextPres(u, roomId, room, '');
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/gameElement`] = '';
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
 async function submitVeto(roomId, role) {
   const key = role === 'PRESIDENT' ? 'presidentVeto' : 'chancellorVeto';
   const snap = await db.ref(`rooms/${roomId}/${key}`).once('value');
-  const current = snap.val();
-  const newVal = !current;
-  await db.ref(`rooms/${roomId}/${key}`).set(newVal);
-
-  // Check if both vetoed
-  const roomSnap = await db.ref('rooms/' + roomId).once('value');
-  const room = roomSnap.val();
+  await db.ref(`rooms/${roomId}/${key}`).set(!snap.val());
+  const rs = await db.ref('rooms/' + roomId).once('value');
+  const room = rs.val();
   if (room.presidentVeto && room.chancellorVeto) {
-    const updates = {};
-    updates[`rooms/${roomId}/presidentVeto`] = false;
-    updates[`rooms/${roomId}/chancellorVeto`] = false;
-    updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-    updates[`rooms/${roomId}/gameElement`] = '';
-    setNextPresident(updates, roomId, room, '');
-    await db.ref().update(updates);
+    const u = {};
+    u[`rooms/${roomId}/presidentVeto`] = false;
+    u[`rooms/${roomId}/chancellorVeto`] = false;
+    u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+    u[`rooms/${roomId}/gameElement`] = '';
+    setNextPres(u, roomId, room, '');
+    await db.ref().update(u);
     playAudio('ChooseChancellor');
   }
 }
@@ -1288,128 +1068,89 @@ async function submitExaminDone(roomId) {
   buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
-  const updates = {};
-  setNextPresident(updates, roomId, room, '');
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  await db.ref().update(updates);
+  const u = {};
+  setNextPres(u, roomId, room, '');
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/gameElement`] = '';
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
 async function submitExaminPlayer(roomId) {
-  if (!_selectedPlayerName) return;
-  const name = _selectedPlayerName;
-  _selectedPlayerName = null;
-  buzz();
-  await db.ref().update({
-    [`rooms/${roomId}/gameState`]: 'ExaminPlayer',
-    [`rooms/${roomId}/gameElement`]: name
-  });
+  if (!_sel) return;
+  const name = _sel; _sel = null; buzz();
+  await db.ref().update({ [`rooms/${roomId}/gameState`]: 'ExaminPlayer', [`rooms/${roomId}/gameElement`]: name });
 }
 
 async function submitExaminPlayerDone(roomId) {
   buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
-  const updates = {};
-  setNextPresident(updates, roomId, room, '');
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  await db.ref().update(updates);
+  const u = {};
+  setNextPres(u, roomId, room, '');
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/gameElement`] = '';
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
 async function submitKill(roomId) {
-  if (!_selectedPlayerName) return;
-  const name = _selectedPlayerName;
-  _selectedPlayerName = null;
-  buzz();
-
+  if (!_sel) return;
+  const name = _sel; _sel = null; buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
   const order = room.playerOrder || [];
-  const updates = {};
-
+  const u = {};
   for (const pcid of order) {
     if (room.players[pcid] && room.players[pcid].name === name) {
-      updates[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'Dead';
-      if (room.players[pcid].identity === 'Hitler') {
-        updates[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL';
-        await db.ref().update(updates);
-        return;
-      }
+      u[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'Dead';
+      if (room.players[pcid].identity === 'Hitler') { u[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL'; await db.ref().update(u); return; }
     }
   }
-
-  setNextPresident(updates, roomId, room, '');
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  await db.ref().update(updates);
+  setNextPres(u, roomId, room, '');
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/gameElement`] = '';
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
 async function submitChoosePresident(roomId) {
-  if (!_selectedPlayerName) return;
-  const name = _selectedPlayerName;
-  _selectedPlayerName = null;
-  buzz();
-
+  if (!_sel) return;
+  const name = _sel; _sel = null; buzz();
   const snap = await db.ref('rooms/' + roomId).once('value');
   const room = snap.val();
-  const updates = {};
-  setNextPresident(updates, roomId, room, name);
-  updates[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  await db.ref().update(updates);
+  const u = {};
+  setNextPres(u, roomId, room, name);
+  u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
+  u[`rooms/${roomId}/gameElement`] = '';
+  await db.ref().update(u);
   playAudio('ChooseChancellor');
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // RESTART / RESET
 // ═══════════════════════════════════════════════════════════════════
-async function restartSamePlayers(roomId) {
-  const snap = await db.ref('rooms/' + roomId).once('value');
-  const room = snap.val();
-  const players = getPlayerArray(room);
-  await startGame(roomId);
-}
+async function restartSamePlayers(roomId) { await startGame(roomId); }
 
 async function resetNewPlayers(roomId) {
-  const snap = await db.ref('rooms/' + roomId).once('value');
-  const room = snap.val();
-  const order = room.playerOrder || [];
-  const updates = {};
-
-  updates[`rooms/${roomId}/gameState`] = 'Login';
-  updates[`rooms/${roomId}/fascistScore`] = 0;
-  updates[`rooms/${roomId}/liberalScore`] = 0;
-  updates[`rooms/${roomId}/voteRetryCount`] = 1;
-  updates[`rooms/${roomId}/toBeChancellorName`] = '';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  updates[`rooms/${roomId}/presidentVeto`] = false;
-  updates[`rooms/${roomId}/chancellorVeto`] = false;
-  updates[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile();
-  updates[`rooms/${roomId}/discardPolicyPile`] = [];
-  updates[`rooms/${roomId}/playerOrder`] = [];
-  updates[`rooms/${roomId}/players`] = null;
-
-  await db.ref().update(updates);
+  const u = {};
+  u[`rooms/${roomId}/gameState`] = 'Login'; u[`rooms/${roomId}/fascistScore`] = 0; u[`rooms/${roomId}/liberalScore`] = 0;
+  u[`rooms/${roomId}/voteRetryCount`] = 1; u[`rooms/${roomId}/toBeChancellorName`] = ''; u[`rooms/${roomId}/gameElement`] = '';
+  u[`rooms/${roomId}/presidentVeto`] = false; u[`rooms/${roomId}/chancellorVeto`] = false;
+  u[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile(); u[`rooms/${roomId}/discardPolicyPile`] = [];
+  u[`rooms/${roomId}/playerOrder`] = []; u[`rooms/${roomId}/players`] = null; u[`rooms/${roomId}/lastVotes`] = null;
+  await db.ref().update(u);
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // HOST / TV VIEW
 // ═══════════════════════════════════════════════════════════════════
 function showHostView() {
-  const roomId = hostViewRoomId;
   app.innerHTML = '<div class="loader">Loading host view...</div>';
-
-  const ref = db.ref('rooms/' + roomId);
+  const ref = db.ref('rooms/' + hostViewRoomId);
   const cb = ref.on('value', snap => {
-    if (!snap.exists()) {
-      app.innerHTML = '<h1>Room not found</h1><a href="#lobby" style="color:var(--gold);">Back to lobby</a>';
-      return;
-    }
-    renderHostScreen(roomId, snap.val());
+    if (!snap.exists()) { app.innerHTML = '<h1>Room not found</h1><a href="#lobby" style="color:var(--gold);">Back to lobby</a>'; return; }
+    renderHostScreen(hostViewRoomId, snap.val());
   });
   activeListeners.push(() => ref.off('value', cb));
 }
@@ -1417,16 +1158,16 @@ function showHostView() {
 function renderHostScreen(roomId, room) {
   const gs = room.gameState || 'Login';
   const players = getPlayerArray(room);
-  const fScore = room.fascistScore || 0;
-  const lScore = room.liberalScore || 0;
+  const fS = room.fascistScore || 0, lS = room.liberalScore || 0;
   const pile = room.drawPolicyPile || [];
-  const voteRetry = room.voteRetryCount || 0;
+  const vr = room.voteRetryCount || 0;
+  const boardImg = room.fascistBoardImage || 'FascistBoard_5';
+  const allIn = allVotesIn(players);
 
   let html = `<h1>${room.name || roomId}</h1>`;
 
   // Player list
-  html += '<div class="host-board"><div class="host-players card">';
-  html += '<h3>Players</h3><div class="flex-col gap-sm mt">';
+  html += '<div class="host-board"><div class="host-players card"><h3>Players</h3><div class="flex-col gap-sm mt">';
   for (const p of players) {
     let badges = '';
     if (p.vip) badges += '<span class="badge badge-vip">VIP</span>';
@@ -1435,49 +1176,67 @@ function renderHostScreen(roomId, room) {
     if (p.inGameStatus === 'Dead') badges += '<span class="badge badge-dead">Dead</span>';
 
     let voteHtml = '';
-    if (gs === 'VoteChancellor' && p.vote !== 'null' && p.vote) {
-      voteHtml = `<span class="text-sm" style="color:${p.vote === 'ja' ? 'var(--liberal)' : 'var(--accent)'}">${p.vote.toUpperCase()}</span>`;
+    if (gs === 'VoteChancellor' && p.inGameStatus !== 'Dead') {
+      const voted = p.vote && p.vote !== 'null';
+      if (allIn && voted) {
+        voteHtml = `<span style="font-weight:700;color:${p.vote === 'ja' ? 'var(--liberal)' : 'var(--accent)'}">${p.vote.toUpperCase()}</span>`;
+      } else if (voted) {
+        voteHtml = '<span class="badge badge-voted">Voted</span>';
+      } else {
+        voteHtml = '<span class="text-dim text-sm">...</span>';
+      }
     }
-
-    html += `<div class="player-row">
-      <div class="name">${p.name}</div>
-      <div class="badges">${badges} ${voteHtml}</div>
-    </div>`;
+    html += `<div class="player-row"><div class="name">${p.name}</div><div class="badges">${badges} ${voteHtml}</div></div>`;
   }
-  html += '</div></div>';
+  html += '</div>';
+
+  // Last vote results sidebar (non-voting states)
+  if (gs !== 'VoteChancellor' && room.lastVotes) html += '<div class="mt">' + voteResultBannerHtml(room) + '</div>';
+  html += '</div>';
 
   // Game area
   html += '<div class="host-game card">';
   if (gs === 'Login') {
-    html += `<div class="text-center"><img src="${IMG}Logo.png" style="max-width:400px;width:100%;"><div class="text-dim mt">Waiting for players... (${players.length})</div></div>`;
+    html += `<div class="text-center"><img src="${IMG}Logo.png" style="max-width:400px;width:100%;" onerror="this.style.display='none'"><div class="text-dim mt">Waiting for players... (${players.length})</div></div>`;
   } else {
-    // Scores
-    html += '<div class="flex gap-lg flex-center mb">';
-    html += '<div><strong class="text-red">Fascist</strong><div class="score-bar mt">';
-    for (let i = 0; i < 6; i++) html += `<div class="score-dot ${i < fScore ? 'filled-f' : ''}">${i + 1}</div>`;
+    // Fascist board with policy overlays
+    html += `<div class="board-wrapper"><img src="${IMG}${boardImg}.png" class="board-bg"><div class="board-policy-overlay">`;
+    const fPos = [{top:'28%',left:'7.5%'},{top:'28%',left:'22.3%'},{top:'28%',left:'37.1%'},{top:'28%',left:'51.9%'},{top:'28%',left:'66.7%'},{top:'28%',left:'81.5%'}];
+    for (let i = 0; i < fS; i++) html += `<img src="${IMG}FASCIST_P.png" style="top:${fPos[i].top};left:${fPos[i].left};">`;
     html += '</div></div>';
-    html += '<div><strong class="text-blue">Liberal</strong><div class="score-bar mt">';
-    for (let i = 0; i < 5; i++) html += `<div class="score-dot ${i < lScore ? 'filled-l' : ''}">${i + 1}</div>`;
+
+    // Liberal board with policy overlays
+    html += `<div class="board-wrapper"><img src="${IMG}LiberalBoard.png" class="board-bg"><div class="board-policy-overlay">`;
+    const lPos = [{top:'24%',left:'15%'},{top:'24%',left:'30%'},{top:'24%',left:'45%'},{top:'24%',left:'60%'},{top:'24%',left:'75%'}];
+    for (let i = 0; i < lS; i++) html += `<img src="${IMG}LIBERAL_P.png" style="top:${lPos[i].top};left:${lPos[i].left};">`;
     html += '</div></div>';
+
+    // Vote tracker with VoteTile image
+    html += '<div class="text-center text-sm text-dim mt">Election Tracker</div><div class="vote-tracker">';
+    for (let i = 1; i <= 3; i++) {
+      if (i <= vr) html += `<img src="${IMG}VoteTile.png" style="width:24px;height:24px;border-radius:50%;" onerror="this.outerHTML='<div class=\\'vote-tracker-dot active\\'></div>'">`;
+      else html += '<div class="vote-tracker-dot"></div>';
+    }
     html += '</div>';
 
-    html += `<div class="text-dim text-center text-sm">Draw pile: ${pile.length} · Vote fails: ${voteRetry}/3</div>`;
+    html += `<div class="text-dim text-center text-sm mt">Draw pile: ${pile.length}</div>`;
 
-    // State info
-    const stateMessages = {
-      'ChooseChancellor': 'President is choosing Chancellor',
-      'VoteChancellor': 'Voting for Chancellor: ' + (room.toBeChancellorName || ''),
-      'RemovePolicy': 'President is removing a policy',
-      'ChoosePolicy': 'Chancellor is choosing a policy',
-      'ExaminPolicy': 'President is examining top 3 policies',
-      'ChooseExaminPlayer': 'President is choosing a player to investigate',
-      'ExaminPlayer': 'President is investigating ' + (room.gameElement || ''),
-      'ChooseKillPlayer': 'President is choosing a player to execute',
-      'ChoosePresidentPlayer': 'President is choosing the next president',
-      'GameEndLIBERAL': 'LIBERALS WIN!',
-      'GameEndFASCIST': 'FASCISTS WIN!'
+    const stateMsg = {
+      ChooseChancellor: 'President is choosing Chancellor',
+      VoteChancellor: 'Voting for Chancellor: ' + (room.toBeChancellorName || ''),
+      RemovePolicy: '🔇 Legislative Session — President removing a policy',
+      ChoosePolicy: '🔇 Legislative Session — Chancellor choosing a policy',
+      ExaminPolicy: 'President is examining top 3 policies',
+      ChooseExaminPlayer: 'President is choosing a player to investigate',
+      ExaminPlayer: 'President is investigating ' + (room.gameElement || ''),
+      ChooseKillPlayer: '💀 President is choosing a player to execute',
+      ChoosePresidentPlayer: 'President is choosing the next president',
+      GameEndLIBERAL: 'LIBERALS WIN!', GameEndFASCIST: 'FASCISTS WIN!'
     };
-    html += `<h2 class="mt" style="color:${gs.includes('FASCIST') ? 'var(--accent)' : gs.includes('LIBERAL') ? 'var(--liberal)' : 'var(--gold)'}">${stateMessages[gs] || gs}</h2>`;
+    html += `<h2 class="mt" style="color:${gs.includes('FASCIST') ? 'var(--accent)' : gs.includes('LIBERAL') ? 'var(--liberal)' : 'var(--gold)'}">${stateMsg[gs] || gs}</h2>`;
+
+    // Rule tip
+    html += ruleTipHtml(gs, room);
 
     if (gs === 'GameEndFASCIST' || gs === 'GameEndLIBERAL') {
       html += '<div class="flex-col gap-sm mt">';
@@ -1489,10 +1248,7 @@ function renderHostScreen(roomId, room) {
     }
   }
   html += '</div></div>';
-
-  // Mute button
   html += `<button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn" style="align-self:center;">${audioMuted ? '🔇 Unmute' : '🔊 Mute'}</button>`;
-
   app.innerHTML = html;
 }
 
@@ -1500,159 +1256,89 @@ function renderHostScreen(roomId, room) {
 // ADMIN PANEL
 // ═══════════════════════════════════════════════════════════════════
 function showAdmin() {
-  app.innerHTML = `
-    <h1>Admin Panel</h1>
-    <div class="flex gap-sm mb">
-      <button class="btn btn-secondary" onclick="location.hash='#lobby'">Back to Lobby</button>
-    </div>
-    <div class="card mb">
-      <h3>Rooms</h3>
-      <div id="adminRooms" class="loader">Loading...</div>
-    </div>
-    <div class="card mb">
-      <h3>Players (PCIDs)</h3>
-      <div class="flex gap-sm mb">
-        <input type="text" id="newPcidName" placeholder="Name for new player" style="flex:1;">
-        <button class="btn btn-green btn-sm" onclick="adminCreatePcid()">Create PCID</button>
-      </div>
-      <div id="adminPlayers" class="loader">Loading...</div>
-    </div>`;
+  app.innerHTML = `<h1>Admin Panel</h1>
+    <div class="flex gap-sm mb"><button class="btn btn-secondary" onclick="location.hash='#lobby'">Back to Lobby</button></div>
+    <div class="card mb"><h3>Rooms</h3><div id="adminRooms" class="loader">Loading...</div></div>
+    <div class="card mb"><h3>Players (PCIDs)</h3>
+      <div class="flex gap-sm mb"><input type="text" id="newPcidName" placeholder="Name for new player" style="flex:1;">
+      <button class="btn btn-green btn-sm" onclick="adminCreatePcid()">Create PCID</button></div>
+      <div id="adminPlayers" class="loader">Loading...</div></div>`;
 
-  // Rooms listener
-  const roomRef = db.ref('rooms');
-  const roomCb = roomRef.on('value', snap => {
+  const rRef = db.ref('rooms');
+  const rCb = rRef.on('value', snap => {
     const rooms = snap.val() || {};
-    const container = document.getElementById('adminRooms');
-    if (!container) return;
-
-    if (Object.keys(rooms).length === 0) {
-      container.innerHTML = '<div class="text-dim">No rooms</div>';
-      return;
+    const c = document.getElementById('adminRooms');
+    if (!c) return;
+    if (!Object.keys(rooms).length) { c.innerHTML = '<div class="text-dim">No rooms</div>'; return; }
+    let h = '<table class="admin-table"><tr><th>ID</th><th>Name</th><th>State</th><th>Players</th><th>Actions</th></tr>';
+    for (const [id, r] of Object.entries(rooms)) {
+      const n = r.players ? Object.keys(r.players).length : 0;
+      h += `<tr><td class="text-sm">${id}</td><td>${r.name||'-'}</td><td>${r.gameState||'-'}</td><td>${n}</td>
+        <td class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="adminRenameRoom('${id}')">Rename</button>
+        <button class="btn btn-sm btn-danger" onclick="adminDeleteRoom('${id}')">Delete</button>
+        <button class="btn btn-sm btn-ghost" onclick="adminResetRoom('${id}')">Reset</button></td></tr>`;
     }
-
-    let html = '<table class="admin-table"><tr><th>ID</th><th>Name</th><th>State</th><th>Players</th><th>Actions</th></tr>';
-    for (const [id, room] of Object.entries(rooms)) {
-      const count = room.players ? Object.keys(room.players).length : 0;
-      html += `<tr>
-        <td class="text-sm">${id}</td>
-        <td>${room.name || '-'}</td>
-        <td>${room.gameState || '-'}</td>
-        <td>${count}</td>
-        <td class="flex gap-sm">
-          <button class="btn btn-sm btn-secondary" onclick="adminRenameRoom('${id}')">Rename</button>
-          <button class="btn btn-sm btn-danger" onclick="adminDeleteRoom('${id}')">Delete</button>
-          <button class="btn btn-sm btn-ghost" onclick="adminResetRoom('${id}')">Reset</button>
-        </td>
-      </tr>`;
-    }
-    html += '</table>';
-    container.innerHTML = html;
+    c.innerHTML = h + '</table>';
   });
-  activeListeners.push(() => roomRef.off('value', roomCb));
+  activeListeners.push(() => rRef.off('value', rCb));
 
-  // Players listener
-  const playerRef = db.ref('players');
-  const playerCb = playerRef.on('value', snap => {
-    const players = snap.val() || {};
-    const container = document.getElementById('adminPlayers');
-    if (!container) return;
-
-    if (Object.keys(players).length === 0) {
-      container.innerHTML = '<div class="text-dim">No players</div>';
-      return;
+  const pRef = db.ref('players');
+  const pCb = pRef.on('value', snap => {
+    const pls = snap.val() || {};
+    const c = document.getElementById('adminPlayers');
+    if (!c) return;
+    if (!Object.keys(pls).length) { c.innerHTML = '<div class="text-dim">No players</div>'; return; }
+    let h = '<table class="admin-table"><tr><th>PCID</th><th>Name</th><th>Actions</th></tr>';
+    for (const [pcid, d] of Object.entries(pls)) {
+      h += `<tr><td class="text-sm">${pcid}${pcid===myPCID?' (You)':''}</td><td>${d.name||'-'}</td>
+        <td class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="adminRenamePlayer('${pcid}')">Rename</button>
+        <button class="btn btn-sm btn-danger" onclick="adminDeletePlayer('${pcid}')">Delete</button></td></tr>`;
     }
-
-    let html = '<table class="admin-table"><tr><th>PCID</th><th>Name</th><th>Actions</th></tr>';
-    for (const [pcid, data] of Object.entries(players)) {
-      html += `<tr>
-        <td class="text-sm">${pcid}${pcid === myPCID ? ' (You)' : ''}</td>
-        <td>${data.name || '-'}</td>
-        <td class="flex gap-sm">
-          <button class="btn btn-sm btn-secondary" onclick="adminRenamePlayer('${pcid}')">Rename</button>
-          <button class="btn btn-sm btn-danger" onclick="adminDeletePlayer('${pcid}')">Delete</button>
-        </td>
-      </tr>`;
-    }
-    html += '</table>';
-    container.innerHTML = html;
+    c.innerHTML = h + '</table>';
   });
-  activeListeners.push(() => playerRef.off('value', playerCb));
+  activeListeners.push(() => pRef.off('value', pCb));
 }
 
-async function adminRenameRoom(roomId) {
-  const name = prompt('New room name:');
-  if (name) await db.ref('rooms/' + roomId + '/name').set(name.trim());
+async function adminRenameRoom(id) { const n = prompt('New room name:'); if (n) await db.ref('rooms/'+id+'/name').set(n.trim()); }
+async function adminDeleteRoom(id) { if (confirm('Delete room '+id+'?')) await db.ref('rooms/'+id).remove(); }
+async function adminResetRoom(id) {
+  if (!confirm('Reset room '+id+'?')) return;
+  const u = {};
+  u[`rooms/${id}/gameState`]='Login'; u[`rooms/${id}/fascistScore`]=0; u[`rooms/${id}/liberalScore`]=0;
+  u[`rooms/${id}/voteRetryCount`]=1; u[`rooms/${id}/toBeChancellorName`]=''; u[`rooms/${id}/gameElement`]='';
+  u[`rooms/${id}/presidentVeto`]=false; u[`rooms/${id}/chancellorVeto`]=false;
+  u[`rooms/${id}/drawPolicyPile`]=createDrawPolicyPile(); u[`rooms/${id}/discardPolicyPile`]=[];
+  u[`rooms/${id}/playerOrder`]=[]; u[`rooms/${id}/players`]=null; u[`rooms/${id}/lastVotes`]=null;
+  await db.ref().update(u);
 }
-
-async function adminDeleteRoom(roomId) {
-  if (confirm('Delete room ' + roomId + '?')) await db.ref('rooms/' + roomId).remove();
-}
-
-async function adminResetRoom(roomId) {
-  if (!confirm('Reset room ' + roomId + ' to Login state?')) return;
-  const updates = {};
-  updates[`rooms/${roomId}/gameState`] = 'Login';
-  updates[`rooms/${roomId}/fascistScore`] = 0;
-  updates[`rooms/${roomId}/liberalScore`] = 0;
-  updates[`rooms/${roomId}/voteRetryCount`] = 1;
-  updates[`rooms/${roomId}/toBeChancellorName`] = '';
-  updates[`rooms/${roomId}/gameElement`] = '';
-  updates[`rooms/${roomId}/presidentVeto`] = false;
-  updates[`rooms/${roomId}/chancellorVeto`] = false;
-  updates[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile();
-  updates[`rooms/${roomId}/discardPolicyPile`] = [];
-  updates[`rooms/${roomId}/playerOrder`] = [];
-  updates[`rooms/${roomId}/players`] = null;
-  await db.ref().update(updates);
-}
-
 async function adminRenamePlayer(pcid) {
-  const name = prompt('New name for ' + pcid + ':');
-  if (!name) return;
-  await db.ref('players/' + pcid + '/name').set(name.trim());
-
-  // Update in rooms too
+  const n = prompt('New name for '+pcid+':'); if (!n) return;
+  await db.ref('players/'+pcid+'/name').set(n.trim());
   const snap = await db.ref('rooms').once('value');
-  const rooms = snap.val() || {};
-  const updates = {};
-  for (const [rid, room] of Object.entries(rooms)) {
-    if (room.players && room.players[pcid]) {
-      updates[`rooms/${rid}/players/${pcid}/name`] = name.trim();
-    }
-  }
-  if (Object.keys(updates).length > 0) await db.ref().update(updates);
+  const rooms = snap.val()||{};
+  const u = {};
+  for (const [rid,r] of Object.entries(rooms)) { if (r.players&&r.players[pcid]) u[`rooms/${rid}/players/${pcid}/name`]=n.trim(); }
+  if (Object.keys(u).length) await db.ref().update(u);
 }
-
 async function adminDeletePlayer(pcid) {
-  if (!confirm('Delete player ' + pcid + '?')) return;
-  await db.ref('players/' + pcid).remove();
-
-  // Remove from rooms
+  if (!confirm('Delete player '+pcid+'?')) return;
+  await db.ref('players/'+pcid).remove();
   const snap = await db.ref('rooms').once('value');
-  const rooms = snap.val() || {};
-  const updates = {};
-  for (const [rid, room] of Object.entries(rooms)) {
-    if (room.players && room.players[pcid]) {
-      updates[`rooms/${rid}/players/${pcid}`] = null;
-      const order = (room.playerOrder || []).filter(p => p !== pcid);
-      updates[`rooms/${rid}/playerOrder`] = order;
-    }
+  const rooms = snap.val()||{};
+  const u = {};
+  for (const [rid,r] of Object.entries(rooms)) {
+    if (r.players&&r.players[pcid]) { u[`rooms/${rid}/players/${pcid}`]=null; u[`rooms/${rid}/playerOrder`]=(r.playerOrder||[]).filter(p=>p!==pcid); }
   }
-  if (Object.keys(updates).length > 0) await db.ref().update(updates);
+  if (Object.keys(u).length) await db.ref().update(u);
 }
-
 async function adminCreatePcid() {
-  const nameInput = document.getElementById('newPcidName');
-  const name = (nameInput.value || '').trim();
-  if (!name) return toast('Enter a name first');
-
-  const newPcid = Array.from({ length: 12 }, () =>
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)]
-  ).join('');
-
-  await db.ref('players/' + newPcid).set({ name, createdAt: Date.now() });
-  nameInput.value = '';
-  toast('Created PCID: ' + newPcid);
+  const ni = document.getElementById('newPcidName');
+  const n = (ni.value||'').trim();
+  if (!n) return toast('Enter a name first');
+  const id = Array.from({length:12},()=>'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random()*26)]).join('');
+  await db.ref('players/'+id).set({name:n,createdAt:Date.now()});
+  ni.value = '';
+  toast('Created PCID: '+id);
 }
 
 // ═══════════════════════════════════════════════════════════════════
