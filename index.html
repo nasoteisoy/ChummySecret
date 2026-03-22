@@ -434,6 +434,16 @@ function showLobby() {
 
 function toggleMute() { audioMuted = !audioMuted; const b = document.getElementById('muteBtn'); if (b) b.textContent = audioMuted ? '🔇' : '🔊'; }
 
+function backToLobby() {
+  if (currentRoomData && currentRoomData.gameState && currentRoomData.gameState !== 'Login'
+      && !currentRoomData.gameState.startsWith('GameEnd')) {
+    if (!confirm('Game is in progress. You can rejoin later from the lobby. Leave?')) return;
+  }
+  currentRoom = null;
+  currentRoomData = null;
+  location.hash = '#lobby';
+}
+
 function showChangeName() {
   const card = document.createElement('div');
   card.className = 'card flex-col gap-sm';
@@ -616,7 +626,7 @@ function renderGamePlayer(roomId, room, players, me) {
   if (me.chancellor) html += `<img src="${IMG}Chancellor.png" class="role-img" title="Chancellor">`;
   html += `<strong>${me.name}</strong>`;
   if (me.vip) html += ' <span class="badge badge-vip">VIP</span>';
-  html += `</div><button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button></div>`;
+  html += `</div><div class="flex gap-sm"><button class="btn btn-sm btn-secondary" onclick="toggleMute()" id="muteBtn">${audioMuted ? '🔇' : '🔊'}</button><button class="btn btn-sm btn-ghost" onclick="backToLobby()">Lobby</button></div></div>`;
 
   // Mini score
   html += miniScoreHtml(room);
@@ -1133,12 +1143,27 @@ async function submitChoosePresident(roomId) {
 async function restartSamePlayers(roomId) { await startGame(roomId); }
 
 async function resetNewPlayers(roomId) {
+  const snap = await db.ref('rooms/' + roomId).once('value');
+  const room = snap.val();
+  const order = room.playerOrder || [];
   const u = {};
+  // Reset room-level game state
   u[`rooms/${roomId}/gameState`] = 'Login'; u[`rooms/${roomId}/fascistScore`] = 0; u[`rooms/${roomId}/liberalScore`] = 0;
   u[`rooms/${roomId}/voteRetryCount`] = 1; u[`rooms/${roomId}/toBeChancellorName`] = ''; u[`rooms/${roomId}/gameElement`] = '';
   u[`rooms/${roomId}/presidentVeto`] = false; u[`rooms/${roomId}/chancellorVeto`] = false;
   u[`rooms/${roomId}/drawPolicyPile`] = createDrawPolicyPile(); u[`rooms/${roomId}/discardPolicyPile`] = [];
-  u[`rooms/${roomId}/playerOrder`] = []; u[`rooms/${roomId}/players`] = null; u[`rooms/${roomId}/lastVotes`] = null;
+  u[`rooms/${roomId}/lastVotes`] = null;
+  // Keep players in room but reset their game properties; preserve VIP
+  for (const pcid of order) {
+    if (room.players && room.players[pcid]) {
+      u[`rooms/${roomId}/players/${pcid}/identity`] = 'Liberal';
+      u[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'InGame';
+      u[`rooms/${roomId}/players/${pcid}/president`] = false;
+      u[`rooms/${roomId}/players/${pcid}/chancellor`] = false;
+      u[`rooms/${roomId}/players/${pcid}/vote`] = 'null';
+      // vip and name are NOT touched — they stay as-is
+    }
+  }
   await db.ref().update(u);
 }
 
