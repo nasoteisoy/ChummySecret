@@ -1579,11 +1579,17 @@ async function submitKill(roomId) {
   const room = snap.val();
   const order = room.playerOrder || [];
   const u = {};
+  let killedPcid = null;
   for (const pcid of order) {
     if (room.players[pcid] && room.players[pcid].name === name) {
+      killedPcid = pcid;
       u[`rooms/${roomId}/players/${pcid}/inGameStatus`] = 'Dead';
       if (room.players[pcid].identity === 'Hitler') { u[`rooms/${roomId}/gameState`] = 'GameEndLIBERAL'; await db.ref().update(u); return; }
     }
+  }
+  // Patch the local snapshot so setNextPres sees the killed player as dead
+  if (killedPcid && room.players[killedPcid]) {
+    room.players[killedPcid].inGameStatus = 'Dead';
   }
   setNextPres(u, roomId, room, '');
   u[`rooms/${roomId}/gameState`] = 'ChooseChancellor';
